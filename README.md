@@ -11,9 +11,9 @@ Project Organization
     ├── README.md          <- The top-level README for developers using this project.
     ├── data
     │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
+    │   ├── bronze (raw)   <- 
+    │   ├── silver         <- 
+    │   └── gold           <- 
     │
     ├── docs               <- A default Sphinx project; see sphinx-doc.org for details
     │
@@ -55,3 +55,34 @@ Project Organization
 --------
 
 <p><small>Project based on the <a target="_blank" href="https://drivendata.github.io/cookiecutter-data-science/">cookiecutter data science project template</a>. #cookiecutterdatascience</small></p>
+
+## Configuração do Ambiente
+
+Este projeto utiliza **Conda** para gerenciamento do ambiente virtual e **pip** para instalação das dependências Python.
+
+### Pré-requisitos
+
+* Python 3.11
+* Conda (Miniconda ou Anaconda)
+* Git
+
+### 1. Clonar o repositório
+
+git clone https://github.com/diego-nasc/postech-challenge-2.git
+cd postech-challenge-2
+
+### 2. Criar o ambiente Conda
+
+conda env create -f environment.yml
+
+### 3. Ativar o ambiente
+
+conda activate postech2
+
+## Arquitetura
+
+O projeto segue a Arquitetura Medalhão (Medallion Architecture):
+
+Bronze: dados ingeridos e padronizados.
+Silver: dados limpos, integrados e validados.
+Gold: dados consolidados para análises e consumo.

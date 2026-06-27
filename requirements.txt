@@ -8,7 +8,6 @@ pyarrow
 openpyxl
 
 # --- CLI & Utilities ---
-click
 typer
 python-dotenv>=0.5.1
 loguru
@@ -21,17 +20,12 @@ isort
 flake8
 pytest
 pytest-cov
-coverage
 
 # --- Documentation ---
-Sphinx
 mkdocs
 
 # --- DevOps & Cloud ---
 # awscli
-
-# --- Backwards Compatibility ---
-pathlib2
 
 # --- Data Validation ---
 great-expectations
