@@ -10,7 +10,7 @@ openpyxl
 # --- CLI & Utilities ---
 typer
 python-dotenv>=0.5.1
-loguru
+# loguru
 tqdm
 requests
 
