@@ -5,7 +5,14 @@
 pandas
 numpy
 pyarrow
-openpyxl
+db-dtypes         # Exigido pelo Pandas para lidar de forma nativa com os tipos de dados do BigQuery
+openpyxl 
+
+# --- GCP & Data Ingestion (Fonte de Dados) ---
+basedosdados           # SDK oficial para baixar os dados do INEP
+google-cloud-bigquery  # Interação com datasets, tabelas e jobs do BigQuery
+google-cloud-storage   # Interação com os buckets do Data Lake (Camada Raw/Parquet)
+pandas-gbq             # Permite o uso de df.to_gbq() e read_gbq() direto no Pandas
 
 # --- CLI & Utilities ---
 typer
@@ -24,8 +31,6 @@ pytest-cov
 # --- Documentation ---
 mkdocs
 
-# --- DevOps & Cloud ---
-# awscli
-
 # --- Data Validation ---
 great-expectations
+sqlalchemy-bigquery    # Permite que o Great Expectations valide os dados diretamente dentro do BigQuery, sem precisar baixar tudo pro Pandas na camada Gold
