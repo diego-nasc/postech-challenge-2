@@ -27,6 +27,8 @@ isort
 flake8
 pytest
 pytest-cov
+colorama
+tabulate
 
 # --- Documentation ---
 mkdocs
