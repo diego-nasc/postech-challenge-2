@@ -292,9 +292,9 @@ python test_conexao.py
 
 ou execute o notebook `notebooks/02_teste_conexao.ipynb`.
 
-### 9. Executar o pipeline (camada Bronze)
+### 9. Executar o pipeline (medalhão)
 
-Com o ambiente, as credenciais e os dados no lugar, execute a ingestão Bronze
+Com o ambiente, as credenciais e os dados no lugar.
 (leitura dos arquivos do INEP e escrita em Parquet no S3 via PySpark/S3A):
 
 ```
