@@ -1,3 +1,4 @@
+BUCKET_RAW="techchallenge2-raw"
 BUCKET_BRONZE="techchallenge2-bronze"
 BUCKET_SILVER="techchallenge2-silver"
 BUCKET_GOLD="techchallenge2-gold"
