@@ -141,11 +141,11 @@ aws --region ${AWS_REGION} glue get-job-runs \
 
 # 5.2.0 - sobe dependências para o S3
 # 1. Baixa o JAR principal
-curl -L -o spark-excel_2.12-3.5.1_0.20.4.jar \
+curl -L -o /tmp/spark-excel_2.12-3.5.1_0.20.4.jar \
   https://repo1.maven.org/maven2/com/crealytics/spark-excel_2.12/3.5.1_0.20.4/spark-excel_2.12-3.5.1_0.20.4.jar
 
 # 2. Sobe para o bucket de scripts
-aws s3 cp spark-excel_2.12-3.5.1_0.20.4.jar \
+aws s3 cp /tmp/spark-excel_2.12-3.5.1_0.20.4.jar \
   s3://${BUCKET_SCRIPTS}/jars/spark-excel_2.12-3.5.1_0.20.4.jar \
   --region ${AWS_REGION}
 
@@ -182,11 +182,43 @@ aws --region ${AWS_REGION} glue get-job-runs \
     --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
     --output table
 
+# 5.3 - Glue job para a SILVER
 
+# 5.3.1 - sobe script para o S3
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_silver.py \
+    s3://${BUCKET_SCRIPTS}/glue_etl_silver.py
+
+# 5.3.2 - cria job
+aws --region ${AWS_REGION} glue create-job \
+    --name "glue-job-silver-etl" \
+    --role "${ROLE_NAME}" \
+    --glue-version "5.1" \
+    --worker-type "G.1X" \
+    --number-of-workers 2 \
+    --command "{
+        \"Name\": \"glueetl\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_silver.py\",
+        \"PythonVersion\": \"3\"
+    }" \
+    --default-arguments "{
+        \"--JOB_NAME\": \"glue-job-silver-etl\",
+        \"--BUCKET_BRONZE\": \"${BUCKET_BRONZE}\",
+        \"--BUCKET_SILVER\": \"${BUCKET_SILVER}\"
+    }"
+
+# 5.3.3 - executa job
+aws --region ${AWS_REGION} glue start-job-run \
+    --job-name "glue-job-silver-etl"
+
+# 5.3.4 - verifica status do job
+aws --region ${AWS_REGION} glue get-job-runs \
+    --job-name "glue-job-silver-etl" \
+    --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
+    --output table
 
 ########################################################
 
-# Verifica athena
+# Verifica athena com uma consulta de exemplo.
 
 # inicia o crawler para a camada bronze
 aws --region ${AWS_REGION} glue start-crawler \
