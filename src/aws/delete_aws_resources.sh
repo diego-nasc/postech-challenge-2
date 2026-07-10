@@ -38,3 +38,4 @@ aws --region ${AWS_REGION} glue delete-database --name "${DATABASE_GOLD}" || tru
 aws --region ${AWS_REGION} glue delete-job --job-name "glue-job-raw-etl" || true
 aws --region ${AWS_REGION} glue delete-job --job-name "glue-job-bronze-etl" || true
 aws --region ${AWS_REGION} glue delete-job --job-name "glue-job-silver-etl" || true
+aws --region ${AWS_REGION} glue delete-job --job-name "glue-job-gold-etl" || true

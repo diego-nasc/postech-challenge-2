@@ -216,6 +216,40 @@ aws --region ${AWS_REGION} glue get-job-runs \
     --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
     --output table
 
+# 5.4 - Glue job para a GOLD
+
+# 5.4.1 - sobe script para o S3
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_gold.py \
+    s3://${BUCKET_SCRIPTS}/glue_etl_gold.py
+
+# 5.4.2 - cria job
+aws --region ${AWS_REGION} glue create-job \
+    --name "glue-job-gold-etl" \
+    --role "${ROLE_NAME}" \
+    --glue-version "5.1" \
+    --worker-type "G.1X" \
+    --number-of-workers 2 \
+    --command "{
+        \"Name\": \"glueetl\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_gold.py\",
+        \"PythonVersion\": \"3\"
+    }" \
+    --default-arguments "{
+        \"--JOB_NAME\": \"glue-job-gold-etl\",
+        \"--BUCKET_SILVER\": \"${BUCKET_SILVER}\",
+        \"--BUCKET_GOLD\": \"${BUCKET_GOLD}\"
+    }"
+
+# 5.4.3 - executa job
+aws --region ${AWS_REGION} glue start-job-run \
+    --job-name "glue-job-gold-etl"
+
+# 5.4.4 - verifica status do job
+aws --region ${AWS_REGION} glue get-job-runs \
+    --job-name "glue-job-gold-etl" \
+    --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
+    --output table
+
 ########################################################
 
 # Verifica athena com uma consulta de exemplo.

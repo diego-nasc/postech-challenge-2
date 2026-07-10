@@ -102,7 +102,7 @@ def main():
     (brasil_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/meta_alfabetizacao_brasil"))
 
-    print("meta_alfabetizacao_brasil gravada.")
+    log.info("meta_alfabetizacao_brasil gravada.")
     brasil_silver.orderBy(F.col("ano").desc()).show(truncate=False)
 
     # ============================================================
@@ -127,7 +127,7 @@ def main():
 
     (meta_uf_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/meta_alfabetizacao_uf"))
-    print("meta_alfabetizacao_uf gravada. Total:", meta_uf_silver.count())
+    log.info("meta_alfabetizacao_uf gravada. Total:", meta_uf_silver.count())
     meta_uf_silver.orderBy("ano", "sigla_uf").show(5, truncate=False)
 
     # ============================================================
@@ -152,7 +152,7 @@ def main():
 
     (meta_mun_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/meta_alfabetizacao_municipio"))
-    print("meta_alfabetizacao_municipio gravada. Total:", meta_mun_silver.count())
+    log.info("meta_alfabetizacao_municipio gravada. Total: %s", meta_mun_silver.count())
     meta_mun_silver.orderBy("ano", "id_municipio").show(5, truncate=False)
 
     # ============================================================
@@ -176,7 +176,7 @@ def main():
 
     (uf_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/uf"))
-    print("silver/uf gravada. Total:", uf_silver.count())
+    log.info("silver/uf gravada. Total: %s", uf_silver.count())
     uf_silver.orderBy("ano", "id_uf", "rede").show(10, truncate=False)
 
     # ============================================================
@@ -202,7 +202,7 @@ def main():
 
     (municipio_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/municipio"))
-    print("silver/municipio gravada. Total:", municipio_silver.count())
+    log.info("silver/municipio gravada. Total: %s", municipio_silver.count())
     municipio_silver.orderBy("ano", "id_municipio", "rede").show(10, truncate=False)
 
     # ============================================================
@@ -236,7 +236,7 @@ def main():
 
     (alunos_silver.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{SILVER_BASE}/alunos"))
-    print("silver/alunos gravada. Total:", alunos_silver.count())
+    log.info("silver/alunos gravada. Total: %s", alunos_silver.count())
     alunos_silver.show(5, truncate=False)
 
     # ============================================================
@@ -245,10 +245,9 @@ def main():
     # Espelha etl-silver.py: catálogo declarativo (CHECKS) + severidade
     # por regra (critico) -> PASS/FAIL/WARN, Score e raise em falha crítica.
     # Tipos: min_count, not_null, unique (aceita chave composta), range.
-    # (No .py a saída vai por logging; aqui usamos print p/ mostrar inline.)
 
     def checar_qualidade(entidade, df, checks):
-        print(f"[DQ:SILVER] {entidade} | iniciando | checks={len(checks)}")
+        log.info(f"[DQ:SILVER] {entidade} | iniciando | checks={len(checks)}")
         passou = falhou = criticos = 0
 
         for check in checks:
@@ -277,7 +276,7 @@ def main():
                 ok, detalhe = False, f"Erro: {e}"
 
             status = "PASS" if ok else ("FAIL" if critico else "WARN")
-            print(f"[DQ:SILVER] {status:4} | {tipo:9} | {coluna if coluna else '-'} | {detalhe}")
+            log.info(f"[DQ:SILVER] {status:4} | {tipo:9} | {coluna if coluna else '-'} | {detalhe}")
             if ok:
                 passou += 1
             else:
@@ -285,7 +284,7 @@ def main():
                 criticos += 1 if critico else 0
 
         score = round(passou / len(checks) * 100, 1)
-        print(f"[DQ:SILVER] {entidade} | Score={score}% | PASS={passou} FAIL={falhou}\n")
+        log.info(f"[DQ:SILVER] {entidade} | Score={score}% | PASS={passou} FAIL={falhou}\n")
         if criticos > 0:
             raise Exception(f"[DQ:SILVER] {entidade}: {criticos} check(s) critico(s) falharam. Pipeline interrompido.")
         return score
@@ -351,7 +350,7 @@ def main():
         df = spark.read.parquet(f"{SILVER_BASE}/{tabela}")
         checar_qualidade(tabela, df, checks)
 
-    print("Camada Silver validada com sucesso.")
+    log.info("Camada Silver validada com sucesso.")
     log.info("Job Silver concluído com sucesso!")
     job.commit()
 
