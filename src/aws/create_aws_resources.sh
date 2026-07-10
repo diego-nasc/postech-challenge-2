@@ -105,11 +105,13 @@ if [ "$resposta" != "s" ]; then
     exit 1
 fi
 
-# 5.1 - sobe script para o S3
+# 5.1 - Glue jop para a RAW
+
+# 5.1.1 - sobe script para o S3
 aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_raw.py \
     s3://${BUCKET_SCRIPTS}/glue_etl_raw.py
 
-# 5.2 - cria job
+# 5.1.2 - cria job
 aws --region ${AWS_REGION} glue create-job \
     --name "glue-job-raw-etl" \
     --role "${ROLE_NAME}" \
@@ -124,16 +126,108 @@ aws --region ${AWS_REGION} glue create-job \
         \"--MAX_TENTATIVAS\": \"3\"
     }"
 
-# 5.3 - executa job
+# 5.1.3 - executa job
 aws --region ${AWS_REGION} glue start-job-run \
     --job-name "glue-job-raw-etl"
 
 
-# 5.4 - verifica status do job
+# 5.1.4 - verifica status do job
 aws --region ${AWS_REGION} glue get-job-runs \
     --job-name "glue-job-raw-etl" \
     --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
     --output table
 
+# 5.2 - Glue job para a BRONZE
+
+# 5.2.0 - sobe dependências para o S3
+# 1. Baixa o JAR principal
+curl -L -o spark-excel_2.12-3.5.1_0.20.4.jar \
+  https://repo1.maven.org/maven2/com/crealytics/spark-excel_2.12/3.5.1_0.20.4/spark-excel_2.12-3.5.1_0.20.4.jar
+
+# 2. Sobe para o bucket de scripts
+aws s3 cp spark-excel_2.12-3.5.1_0.20.4.jar \
+  s3://${BUCKET_SCRIPTS}/jars/spark-excel_2.12-3.5.1_0.20.4.jar \
+  --region ${AWS_REGION}
+
+# 5.2.1 - sobe script para o S3
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_bronze.py \
+    s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py
+
+# 5.2.2 - cria job
+aws --region ${AWS_REGION} glue create-job \
+    --name "glue-job-bronze-etl" \
+    --role "${ROLE_NAME}" \
+    --glue-version "5.1" \
+    --worker-type "G.1X" \
+    --number-of-workers 2 \
+    --command "{
+        \"Name\": \"glueetl\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py\",
+        \"PythonVersion\": \"3\"
+    }" \
+    --default-arguments "{
+        \"--JOB_NAME\": \"glue-job-bronze-etl\",
+        \"--BUCKET_BRONZE\": \"${BUCKET_BRONZE}\",
+        \"--BUCKET_RAW\": \"${BUCKET_RAW}\",
+        \"--extra-jars\": \"s3://${BUCKET_SCRIPTS}/jars/spark-excel_2.12-3.5.1_0.20.4.jar\"
+    }"
+
+# 5.2.3 - executa job
+aws --region ${AWS_REGION} glue start-job-run \
+    --job-name "glue-job-bronze-etl"
+
+# 5.2.4 - verifica status do job
+aws --region ${AWS_REGION} glue get-job-runs \
+    --job-name "glue-job-bronze-etl" \
+    --query 'JobRuns[0].{State:JobRunState,Error:ErrorMessage}' \
+    --output table
+
+
+
 ########################################################
 
+# Verifica athena
+
+# inicia o crawler para a camada bronze
+aws --region ${AWS_REGION} glue start-crawler \
+    --name "crawler-bronze"
+
+# verifica status do crawler
+aws --region ${AWS_REGION} glue get-crawler \
+    --name "crawler-bronze" \
+    --query 'Crawler.State'
+
+QUERY_ID=$(aws athena start-query-execution \
+  --region "$AWS_REGION" \
+  --query-string "SELECT COUNT(*) AS n FROM ts_aluno" \
+  --query-execution-context "Database=$DATABASE_BRONZE" \
+  --result-configuration "OutputLocation=s3://${BUCKET_BRONZE}/athena_results/" \
+  --query 'QueryExecutionId' \
+  --output text)
+
+echo "Rodando: $QUERY_ID"
+
+# espera até SUCCEEDED ou FAILED
+while true; do
+  STATE=$(aws athena get-query-execution \
+    --region "$AWS_REGION" \
+    --query-execution-id "$QUERY_ID" \
+    --query 'QueryExecution.Status.State' \
+    --output text)
+  echo "Status: $STATE"
+  [[ "$STATE" == "SUCCEEDED" || "$STATE" == "FAILED" || "$STATE" == "CANCELLED" ]] && break
+  sleep 2
+done
+
+if [[ "$STATE" == "SUCCEEDED" ]]; then
+  aws athena get-query-results \
+    --region "$AWS_REGION" \
+    --query-execution-id "$QUERY_ID" \
+    --output table
+else
+  aws athena get-query-execution \
+    --region "$AWS_REGION" \
+    --query-execution-id "$QUERY_ID" \
+    --query 'QueryExecution.Status.StateChangeReason' \
+    --output text
+fi
