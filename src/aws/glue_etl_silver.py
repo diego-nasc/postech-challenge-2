@@ -172,6 +172,8 @@ def main():
             CAST(VL_MEDIA_LP AS DOUBLE)            AS media_portugues
         FROM bronze_ts_estado
         WHERE CO_UF IS NOT NULL
+        WHERE CO_UF IS NOT NULL
+          AND CAST(ID_TIPO_REDE AS INT) = 5   -- Pública (Estadual+Municipal): indicador UF
     """))
 
     (uf_silver.write.mode("overwrite").partitionBy("ano")
@@ -198,6 +200,8 @@ def main():
             CAST(VL_MEDIA_LP AS DOUBLE)                        AS media_portugues
         FROM bronze_ts_municipio
         WHERE CO_MUNICIPIO IS NOT NULL
+          AND CAST(ID_TIPO_REDE AS INT) = 3   -- Municipal: indicador Municipal
+
     """))
 
     (municipio_silver.write.mode("overwrite").partitionBy("ano")
@@ -224,7 +228,7 @@ def main():
             TRIM(CAST(ID_ALUNO  AS STRING))                   AS id_aluno,
             CAST(CO_CADERNO_LP AS INT)                        AS caderno,
             CAST(TP_SERIE AS INT)                             AS serie,
-            CAST(TP_DEPENDENCIA AS INT)                       AS rede,
+            CAST(TP_DEPENDENCIA AS INT)                       AS dependencia_administrativa,
             CAST(IN_PRESENCA_LP AS INT)                       AS presenca,
             CAST(IN_PREENCHIMENTO_LP AS INT)                  AS preenchimento_caderno,
             CASE WHEN _prof IS NULL THEN NULL                 -- 769.525 não-medidos -> NULL protege o denominador
