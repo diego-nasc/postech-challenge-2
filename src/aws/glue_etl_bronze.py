@@ -344,6 +344,37 @@ def bronze_xlsx(entidade, arquivo, sheet, schema, ano):
 
     return df
 
+# Anos que a carga completa deve conter. Semântica de SUBCONJUNTO:
+# todos os esperados presentes; anos extras (ex.: 2026) NÃO reprovam.
+ANOS_ESPERADOS = {int(a) for a in ANOS}
+
+def checar_anos(df, entidade):
+    presentes = {r[0] for r in df.select("NU_ANO_AVALIACAO").distinct().collect()}
+    faltando = ANOS_ESPERADOS - presentes
+    if faltando:
+        raise ValueError(
+            f"{entidade}: anos esperados ausentes -> {sorted(faltando)} "
+            f"(presentes: {sorted(presentes)})"
+        )
+    log.info("%s: anos OK -> %s", entidade, sorted(presentes))
+
+def checar_aluno(df, entidade):
+    # 1 leitura: proficiência nula (diagnóstico) + invariante ausente => sem nota.
+    m = df.agg(
+        F.sum(F.col("VL_PROFICIENCIA_LP").isNull().cast("long")).alias("prof_nula"),
+        F.sum(
+            ((F.col("IN_PRESENCA_LP") == 0) & F.col("VL_PROFICIENCIA_LP").isNotNull())
+            .cast("long")
+        ).alias("viol"),
+    ).collect()[0]
+    log.info("%s: proficiência nula = %s", entidade, f"{m['prof_nula']:,}")
+    if m["viol"] == 0:
+        log.info("%s: invariante ausente=>sem-nota OK (0 violações)", entidade)
+    else:
+        log.warning(
+            "%s: %s aluno(s) ausente(s) COM proficiência (anomalia)",
+            entidade, f"{m['viol']:,}",
+        )
 
 def main():
     log.info("Iniciando job Bronze...")
@@ -370,30 +401,10 @@ def main():
     # ============================================================
     for entidade in ["ts_aluno", "ts_municipio", "ts_estado"]:
         dfc = spark.read.parquet(f"{BRONZE_BASE}/{entidade}")
-        n = dfc.count()
-        anos = sorted(r["NU_ANO_AVALIACAO"] for r in
-                      dfc.select("NU_ANO_AVALIACAO").distinct().collect())
-        assert anos == [2023, 2024, 2025], f"{entidade}: anos inesperados na partição -> {anos}"
-        log.info("%s: %s linhas | partições %s", entidade, f"{n:,}", anos)
+        checar_anos(dfc, entidade)
+        log.info("%s: %s linhas", entidade, f"{dfc.count():,}")    
 
-    chk = spark.read.parquet(f"{BRONZE_BASE}/ts_municipio")
-    chk.printSchema()
-    chk.groupBy("NU_ANO_AVALIACAO").count().orderBy("NU_ANO_AVALIACAO").show()
-    chk.select("_source_file", "_ingestion_timestamp").show(3, truncate=False)
-
-    n_nulos = (spark.read.parquet(f"{BRONZE_BASE}/ts_aluno")
-               .filter(F.col("VL_PROFICIENCIA_LP").isNull()).count())
-    log.info("proficiência nula (ts_aluno): %s", f"{n_nulos:,}")
-
-    # ============================================================
-    # SANITY CHECK: PROFICIÊNCIA NULA E ALUNOS AUSENTES
-    # ============================================================
-    aluno = spark.read.parquet(f"{BRONZE_BASE}/ts_aluno")
-    prof_nula = aluno.filter(F.col("VL_PROFICIENCIA_LP").isNull()).count()
-    ausentes = aluno.filter(F.col("IN_PRESENCA_LP") == 0).count()
-    log.info("proficiência nula : %s", f"{prof_nula:,}")
-    log.info("ausentes (=0)     : %s", f"{ausentes:,}")
-    log.info("batem: %s", prof_nula == ausentes)
+    checar_aluno(spark.read.parquet(f"{BRONZE_BASE}/ts_aluno"), "ts_aluno")
 
     # ============================================================
     # EXECUÇÃO DA INGESTÃO DAS PLANILHAS DE METAS
@@ -433,35 +444,15 @@ def main():
             .option("mergeSchema", "true")
             .parquet(f"{BRONZE_BASE}/{ent}")
         )
-        anos = sorted(
-            r[0]
-            for r in d.select("NU_ANO_AVALIACAO").distinct().collect()
-        )
-        log.info(
-            "%s: %s linhas | partições %s | %s colunas",
-            ent, f"{d.count():,}", anos, len(d.columns),
-        )
-        d.groupBy("NU_ANO_AVALIACAO") \
-         .count() \
-         .orderBy("NU_ANO_AVALIACAO") \
-         .show()
+
+        checar_anos(d, ent)
+        log.info("%s: %s linhas | %s colunas", ent, f"{d.count():,}", len(d.columns))
 
     uf = (
         spark.read
         .option("mergeSchema", "true")
         .parquet(f"{BRONZE_BASE}/metas_ufs")
     )
-    uf.filter(F.col("NOME_UF") == "Brasil") \
-      .select(
-          "NU_ANO_AVALIACAO",
-          "NOME_UF",
-          "REDE",
-          "META_FINAL_2030",
-          "PC_AVALIADOS_LP",
-      ) \
-      .orderBy("NU_ANO_AVALIACAO") \
-      .show(truncate=False)
-    uf.printSchema()
 
     log.info("Job Bronze concluído com sucesso!")
     job.commit()

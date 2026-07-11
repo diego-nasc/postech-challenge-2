@@ -38,7 +38,7 @@ GOLD_BASE = f"s3a://{BUCKET_GOLD}"
 spark.conf.set("spark.sql.sources.partitionOverwriteMode", "dynamic")
 spark.sparkContext.setLogLevel("WARN")
 
-GOLD_TS = datetime.now(timezone.utc).isoformat()   # timestamp único do batch, como SILVER_TS
+GOLD_TS = datetime.now(timezone.utc)   # timestamp único do batch, como SILVER_TS
 
 
 def add_gold_metadata(df):
@@ -126,7 +126,7 @@ def main():
 
     (gold_ind_mun.write.mode("overwrite").partitionBy("ano")
         .parquet(f"{GOLD_BASE}/indicadores_municipio"))
-    log.info("gold/indicadores_municipio:", gold_ind_mun.count())
+    log.info("gold/indicadores_municipio: %s", gold_ind_mun.count())
     gold_ind_mun.orderBy("ano", "id_municipio").show(8, truncate=False)
 
 
@@ -209,11 +209,7 @@ def main():
         .parquet(f"{SILVER_BASE}/alunos")
         .createOrReplaceTempView("silver_alunos")
     )
-    (spark
-        .read
-        .parquet(f"{GOLD_BASE}/indicadores_municipio")
-        .createOrReplaceTempView("gold_ind_mun")
-    )
+    gold_ind_mun.createOrReplaceTempView("gold_ind_mun")
 
     gold_aluno_ctx = add_gold_metadata(spark.sql("""
     SELECT
@@ -221,9 +217,9 @@ def main():
         a.id_aluno,
         a.ano,
         a.id_municipio,
-        SUBSTRING(a.id_municipio, 1, 2)  AS id_uf,   -- derivado do IBGE (sempre presente); sigla_uf omitida
+        CAST(SUBSTRING(a.id_municipio, 1, 2) AS INT) AS id_uf,   -- derivado do código IBGE do município; sigla_uf omitida
         -- atributos do aluno
-        a.rede,
+        a.dependencia_administrativa,
         a.caderno,
         -- contexto do município (features de lugar, herdadas da Gold municipal)
         c.taxa_alfabetizacao        AS ctx_taxa_municipio,
@@ -257,7 +253,7 @@ def main():
         "vazamento":     ["proficiencia", "gap_proficiencia"],   # DERIVAM do alvo -> NUNCA como feature
         "constante":     [],   # presenca/preenchimento não entraram (=1 em todos os medidos)
         "features":      [
-            "rede", "caderno",
+            "dependencia_administrativa", "caderno",
             "ctx_taxa_municipio", "ctx_media_municipio", "ctx_meta_municipio",
             "ctx_distancia_meta_municipio", "ctx_atingiu_meta_municipio",
             "ctx_participacao_municipio", "ctx_categoria_municipio",
@@ -271,87 +267,264 @@ def main():
     # ============================================================
     # Espelha etl-silver.py: catálogo declarativo (CHECKS) + severidade
     # por regra (critico) -> PASS/FAIL/WARN, Score e raise em falha crítica.
-    # Tipos: min_count, not_null, unique (aceita chave composta), range.
+    # Tipos: min_count, not_null, unique (aceita chave composta), range, anos, regex e expr.
 
     def checar_qualidade(entidade, df, checks):
         log.info(f"[DQ:GOLD] {entidade} | iniciando | checks={len(checks)}")
+
+        # Coluna inexistente é erro de contrato -> falha sempre
+        referenciadas = set()
+        for c in checks:
+            col = c.get("coluna")
+            if isinstance(col, list):
+                referenciadas.update(col)
+            elif col:
+                referenciadas.add(col)
+
+        ausentes = referenciadas - set(df.columns)
+        if ausentes:
+            raise ValueError(
+                f"[DQ:GOLD] {entidade}: coluna(s) do check ausente(s) no schema -> "
+                f"{sorted(ausentes)} | schema: {df.columns}"
+            )
+
+        # Uma passada de agg:
+        # total + nulos + ranges + anos + regex + expressões
+        exprs = [F.count(F.lit(1)).alias("_total")]
+
+        for c in checks:
+            if c["tipo"] == "not_null":
+                exprs.append(
+                    F.coalesce(
+                        F.sum(
+                            F.col(c["coluna"]).isNull().cast("long")
+                        ),
+                        F.lit(0)
+                    ).alias(f"nulos_{c['coluna']}")
+                )
+
+            elif c["tipo"] == "range":
+                col, (mn, mx) = c["coluna"], c["valor"]
+
+                exprs.append(
+                    F.coalesce(
+                        F.sum(
+                            (
+                                (F.col(col) < mn)
+                                | (F.col(col) > mx)
+                            ).cast("long")
+                        ),
+                        F.lit(0)
+                    ).alias(f"fora_{col}")
+                )
+
+                exprs.append(
+                    F.coalesce(
+                        F.sum(
+                            F.col(col).isNotNull().cast("long")
+                        ),
+                        F.lit(0)
+                    ).alias(f"naonulos_{col}")
+                )
+
+            elif c["tipo"] == "anos":
+                exprs.append(
+                    F.collect_set(
+                        F.col(c["coluna"])
+                    ).alias(f"anos_{c['coluna']}")
+                )
+
+            elif c["tipo"] == "regex":
+                col = c["coluna"]
+
+                exprs.append(
+                    F.coalesce(
+                        F.sum(
+                            (~F.col(col).rlike(c["valor"])).cast("long")
+                        ),
+                        F.lit(0)
+                    ).alias(f"regex_{col}")
+                )
+
+            elif c["tipo"] == "expr":
+                exprs.append(
+                    F.coalesce(
+                        F.sum(
+                            F.expr(c["valor"]).cast("long")
+                        ),
+                        F.lit(0)
+                    ).alias(f"expr_{c['nome']}")
+                )
+
+        m = df.agg(*exprs).collect()[0].asDict()
+        total = m["_total"]
+
         passou = falhou = criticos = 0
 
         for check in checks:
-            tipo    = check["tipo"]
-            coluna  = check.get("coluna")
-            valor   = check.get("valor")
+            tipo = check["tipo"]
+            coluna = check.get("coluna")
+            valor = check.get("valor")
             critico = check.get("critico", True)
+
             ok, detalhe = False, ""
 
-            try:
-                if tipo == "min_count":
-                    n  = df.count()
-                    ok, detalhe = n >= valor, f"contagem={n} | minimo={valor}"
-                elif tipo == "not_null":
-                    nulos = df.filter(F.col(coluna).isNull()).count()
-                    ok, detalhe = nulos == 0, f"{nulos} nulos"
-                elif tipo == "unique":
-                    cols = coluna if isinstance(coluna, list) else [coluna]
-                    dups = df.count() - df.select(*cols).distinct().count()
-                    ok, detalhe = dups == 0, f"{dups} duplicatas (chave={cols})"
-                elif tipo == "range":
-                    mn, mx = valor
-                    fora = df.filter((F.col(coluna) < mn) | (F.col(coluna) > mx)).count()
-                    ok, detalhe = fora == 0, f"{fora} fora de [{mn},{mx}]"
-                elif tipo == "expr":
-                    viol = df.filter(valor).count()                  # valor = SQL da VIOLAÇÃO
-                    ok, detalhe = viol == 0, f"{viol} linhas violam: {valor}"
-            except Exception as e:
-                ok, detalhe = False, f"Erro: {e}"
+            if tipo == "min_count":
+                ok = total >= valor
+                detalhe = f"contagem={total} | minimo={valor}"
 
-            status = "PASS" if ok else ("FAIL" if critico else "WARN")
-            log.info(f"[DQ:GOLD] {status:4} | {tipo:9} | {coluna if coluna else '-'} | {detalhe}")
+            elif tipo == "not_null":
+                nulos = m[f"nulos_{coluna}"]
+
+                ok = nulos == 0
+                detalhe = f"{nulos} nulos"
+
+            elif tipo == "unique":
+                cols = coluna if isinstance(coluna, list) else [coluna]
+
+                dups = (
+                    total
+                    - df.select(*cols).distinct().count()
+                )
+
+                ok = dups == 0
+                detalhe = f"{dups} duplicatas (chave={cols})"
+
+            elif tipo == "range":
+                mn, mx = valor
+
+                fora = m[f"fora_{coluna}"]
+                naonulos = m[f"naonulos_{coluna}"]
+
+                if total > 0 and naonulos == 0:
+                    ok = False
+                    detalhe = f"coluna 100% nula ({total} linhas)"
+                else:
+                    ok = fora == 0
+                    detalhe = (
+                        f"{fora} fora de [{mn},{mx}] | "
+                        f"nulos={total - naonulos}"
+                    )
+
+            elif tipo == "anos":
+                presentes = set(m[f"anos_{coluna}"])
+                faltando = set(valor) - presentes
+
+                ok = len(faltando) == 0
+                detalhe = (
+                    f"faltando={sorted(faltando)} | "
+                    f"presentes={sorted(presentes)}"
+                )
+
+            elif tipo == "regex":
+                invalidos = m[f"regex_{coluna}"]
+
+                ok = invalidos == 0
+                detalhe = (
+                    f"{invalidos} fora do padrão '{valor}'"
+                )
+
+            elif tipo == "expr":
+                violacoes = m[f"expr_{check['nome']}"]
+
+                ok = violacoes == 0
+                detalhe = (
+                    f"{violacoes} violações ({check['nome']})"
+                )
+
+            status = (
+                "PASS"
+                if ok
+                else ("FAIL" if critico else "WARN")
+            )
+
+            log.info(
+                f"[DQ:GOLD] {status:4} | "
+                f"{tipo:9} | "
+                f"{coluna if coluna else '-'} | "
+                f"{detalhe}"
+            )
+
             if ok:
                 passou += 1
             else:
                 falhou += 1
                 criticos += 1 if critico else 0
 
-        score = round(passou / len(checks) * 100, 1)
-        log.info(f"[DQ:GOLD] {entidade} | Score={score}% | PASS={passou} FAIL={falhou}\n")
+        score = round(
+            passou / len(checks) * 100,
+            1
+        )
+
+        log.info(
+            f"[DQ:GOLD] {entidade} | "
+            f"Score={score}% | "
+            f"PASS={passou} FAIL={falhou}\n"
+        )
+
         if criticos > 0:
-            raise Exception(f"[DQ:GOLD] {entidade}: {criticos} check(s) critico(s) falharam. Pipeline interrompido.")
+            raise Exception(
+                f"[DQ:GOLD] {entidade}: "
+                f"{criticos} check(s) critico(s) falharam. "
+                "Pipeline interrompido."
+            )
+
         return score
+
+    ANOS_ESPERADOS = [2023, 2024, 2025]
 
     CHECKS_GOLD = {
         "indicadores_municipio": [
             {"tipo": "min_count", "valor": 1,                                        "critico": True},
+            {"tipo": "anos", "coluna": "ano",
+             "valor": ANOS_ESPERADOS, "critico": True},
             {"tipo": "not_null",  "coluna": "ano",                                   "critico": True},
             {"tipo": "not_null",  "coluna": "id_municipio",                          "critico": True},
             {"tipo": "unique",    "coluna": ["ano", "id_municipio"],                 "critico": True},
             {"tipo": "range",     "coluna": "taxa_alfabetizacao", "valor": (0, 100),  "critico": False},
             {"tipo": "range",     "coluna": "meta", "valor": (0, 100),                "critico": False},
+            {"tipo": "expr", "nome": "meta_ausente_em_ano_alvo",
+            "valor": "ano IN (2024, 2025) AND meta IS NULL",
+            "critico": False},
             {"tipo": "range",     "coluna": "percentual_participacao", "valor": (0, 100), "critico": False},
-            {"tipo": "expr",      "coluna": "atingiu_meta",
-             "valor": "meta IS NOT NULL AND ((taxa_alfabetizacao - meta >= 0) <> atingiu_meta)", "critico": True},
+            {"tipo": "expr", "nome": "atingiu_meta_incoerente",
+            "valor": "meta IS NOT NULL AND ((taxa_alfabetizacao - meta >= 0) <> atingiu_meta)",
+            "critico": True},
         ],
         "indicadores_uf": [
-            {"tipo": "min_count", "valor": 1,                                         "critico": True},
-            {"tipo": "not_null",  "coluna": "ano",                                    "critico": True},
-            {"tipo": "not_null",  "coluna": "sigla_uf",                              "critico": True},
-            {"tipo": "unique",    "coluna": ["ano", "sigla_uf"],                      "critico": True},
-            {"tipo": "range",     "coluna": "taxa_alfabetizacao", "valor": (0, 100),  "critico": False},
-            {"tipo": "range",     "coluna": "meta", "valor": (0, 100),                 "critico": False},
-            {"tipo": "range",     "coluna": "percentual_participacao", "valor": (0, 100), "critico": False},
-            {"tipo": "expr",      "coluna": "atingiu_meta",
-             "valor": "meta IS NOT NULL AND ((taxa_alfabetizacao - meta >= 0) <> atingiu_meta)", "critico": True},
+            {"tipo": "min_count", "valor": 1, "critico": True},
+            {"tipo": "anos", "coluna": "ano",
+            "valor": ANOS_ESPERADOS, "critico": True},
+            {"tipo": "not_null", "coluna": "ano", "critico": True},
+            {"tipo": "not_null", "coluna": "sigla_uf", "critico": True},
+            {"tipo": "unique", "coluna": ["ano", "sigla_uf"], "critico": True},
+            {"tipo": "range", "coluna": "taxa_alfabetizacao",
+            "valor": (0, 100), "critico": False},
+            {"tipo": "range", "coluna": "meta",
+            "valor": (0, 100), "critico": False},
+            {"tipo": "expr", "nome": "meta_ausente_em_ano_alvo",
+            "valor": "ano IN (2024, 2025) AND meta IS NULL",
+            "critico": False},
+            {"tipo": "range", "coluna": "percentual_participacao",
+            "valor": (0, 100), "critico": False},
+            {"tipo": "expr", "nome": "atingiu_meta_incoerente",
+            "valor": "meta IS NOT NULL AND ((taxa_alfabetizacao - meta >= 0) <> atingiu_meta)",
+            "critico": True},
         ],
+                
         "aluno_contexto": [
             {"tipo": "min_count", "valor": 1,                                   "critico": True},
+            {"tipo": "anos", "coluna": "ano",
+            "valor": ANOS_ESPERADOS, "critico": True},
             {"tipo": "not_null",  "coluna": "id_aluno",                        "critico": True},
             {"tipo": "not_null",  "coluna": "ano",                             "critico": True},
             {"tipo": "not_null",  "coluna": "proficiencia",                    "critico": True},   # filtro garante
             {"tipo": "not_null",  "coluna": "label_alfabetizado",             "critico": True},   # sem NULL no alvo
             {"tipo": "unique",    "coluna": ["ano", "id_aluno"],               "critico": True},
-            {"tipo": "range",     "coluna": "proficiencia", "valor": (0, 1000),   "critico": False},
-            {"tipo": "expr",      "coluna": "label_alfabetizado",
-             "valor": "(proficiencia >= 743) <> (label_alfabetizado = 1)",  "critico": True},
+            {"tipo": "range",     "coluna": "proficiencia", "valor": (0, 1500),   "critico": False},
+            {"tipo": "expr", "nome": "label_incoerente_com_corte",
+            "valor": "(proficiencia >= 743) <> (label_alfabetizado = 1)",
+            "critico": True},
         ],
     }
 
