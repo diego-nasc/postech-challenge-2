@@ -50,11 +50,18 @@ def main():
     log.info("SILVER_BASE : %s", SILVER_BASE)
     log.info("GOLD_BASE   : %s", GOLD_BASE)
 
-    # ============================================================
+
     # Consolidação da Camada Gold: Indicadores Municipais
-    # ============================================================
-    spark.read.parquet(f"{SILVER_BASE}/municipio").createOrReplaceTempView("silver_municipio")
-    spark.read.parquet(f"{SILVER_BASE}/meta_alfabetizacao_municipio").createOrReplaceTempView("silver_meta_municipio")
+    (spark
+        .read
+        .parquet(f"{SILVER_BASE}/municipio")
+        .createOrReplaceTempView("silver_municipio")
+    )
+    (spark
+        .read
+        .parquet(f"{SILVER_BASE}/meta_alfabetizacao_municipio")
+        .createOrReplaceTempView("silver_meta_municipio")
+    )
 
     gold_ind_mun = add_gold_metadata(spark.sql("""
     WITH
@@ -122,11 +129,18 @@ def main():
     log.info("gold/indicadores_municipio:", gold_ind_mun.count())
     gold_ind_mun.orderBy("ano", "id_municipio").show(8, truncate=False)
 
-    # ============================================================
+
     # Consolidação da Camada Gold: Indicadores Estaduais (UF)
-    # ============================================================
-    spark.read.parquet(f"{SILVER_BASE}/uf").createOrReplaceTempView("silver_uf")
-    spark.read.parquet(f"{SILVER_BASE}/meta_alfabetizacao_uf").createOrReplaceTempView("silver_meta_uf")
+    (spark
+        .read
+        .parquet(f"{SILVER_BASE}/uf")
+        .createOrReplaceTempView("silver_uf")
+    )
+    (spark
+        .read
+        .parquet(f"{SILVER_BASE}/meta_alfabetizacao_uf")
+        .createOrReplaceTempView("silver_meta_uf")
+    )
 
     gold_ind_uf = add_gold_metadata(spark.sql("""
     WITH
@@ -188,11 +202,18 @@ def main():
     log.info("gold/indicadores_uf: %s", gold_ind_uf.count())
     gold_ind_uf.orderBy("ano", "sigla_uf").show(30, truncate=False)
 
-    # ============================================================
+
     # Consolidação da Camada Gold: Contexto Individual do Aluno
-    # ============================================================
-    spark.read.parquet(f"{SILVER_BASE}/alunos").createOrReplaceTempView("silver_alunos")
-    spark.read.parquet(f"{GOLD_BASE}/indicadores_municipio").createOrReplaceTempView("gold_ind_mun")
+    (spark
+        .read
+        .parquet(f"{SILVER_BASE}/alunos")
+        .createOrReplaceTempView("silver_alunos")
+    )
+    (spark
+        .read
+        .parquet(f"{GOLD_BASE}/indicadores_municipio")
+        .createOrReplaceTempView("gold_ind_mun")
+    )
 
     gold_aluno_ctx = add_gold_metadata(spark.sql("""
     SELECT
@@ -229,15 +250,13 @@ def main():
     log.info("gold/aluno_contexto: %s", gold_aluno_ctx.count())   # ~5,32M
     gold_aluno_ctx.show(5, truncate=False)
 
-    # ============================================================
     # DICIONÁRIO DE PAPÉIS — gold/aluno_contexto (consumido pelo pipeline de ML)
-    # ============================================================
     PAPEIS_ALUNO_CONTEXTO = {
-        "alvo":         ["label_alfabetizado"],
-        "identificador":["id_aluno", "ano", "id_municipio", "id_uf"],
-        "vazamento":    ["proficiencia", "gap_proficiencia"],   # DERIVAM do alvo -> NUNCA como feature
-        "constante":    [],   # presenca/preenchimento não entraram (=1 em todos os medidos)
-        "features":     [
+        "alvo":          ["label_alfabetizado"],
+        "identificador": ["id_aluno", "ano", "id_municipio", "id_uf"],
+        "vazamento":     ["proficiencia", "gap_proficiencia"],   # DERIVAM do alvo -> NUNCA como feature
+        "constante":     [],   # presenca/preenchimento não entraram (=1 em todos os medidos)
+        "features":      [
             "rede", "caderno",
             "ctx_taxa_municipio", "ctx_media_municipio", "ctx_meta_municipio",
             "ctx_distancia_meta_municipio", "ctx_atingiu_meta_municipio",
