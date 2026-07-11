@@ -25,6 +25,7 @@ Repositório: [https://github.com/diego-nasc/postech-challenge-2](https://github
   - [7. Baixar os dados oficiais do INEP](#7-baixar-os-dados-oficiais-do-inep)
   - [8. Testar a conexão com o S3](#8-testar-a-conexão-com-o-s3)
   - [9. Executar o pipeline (camada Bronze)](#9-executar-o-pipeline-camada-bronze)
+  - [10. Ambiente AWS](#10-ambiente-aws)
 - [Estado atual e próximos passos](#estado-atual-e-próximos-passos)
 - [Observações importantes / Troubleshooting](#observações-importantes--troubleshooting)
 
@@ -80,8 +81,8 @@ Embora a origem dos dados seja o portal oficial do INEP, todo o **processamento*
 realizado na **Amazon Web Services (AWS)**:
 
 - Os arquivos brutos são armazenados no **Amazon S3**, que atua como *Data Lake*.
-- As transformações **Silver** e **Gold** são executadas por **AWS Glue Jobs** com
-  **PySpark**, permitindo processamento distribuído e escalável.
+- As transformações **Bronze**, **Silver** e **Gold** são executadas por 
+  **AWS Glue Jobs** com **PySpark**, permitindo processamento distribuído e escalável.
 - Regras de qualidade (duplicidade, valores ausentes, validação de chaves e
   consistência entre tabelas) são aplicadas durante as transformações nos próprios
   Glue Jobs.
@@ -100,13 +101,23 @@ realizado na **Amazon Web Services (AWS)**:
 
         Arquivos oficiais do INEP
                   │
-                  ▼
-        Python / Pandas (Ingestão)
-                  │
 ──────────────────── AWS ────────────────────
                   │
                   ▼
-          Amazon S3 (Bronze)
+        AWS Glue Job (PythonShell)
+           Python (Ingestão)
+                  │
+                  ▼
+          Amazon S3 (Camada Raw)
+                  │
+                  ▼
+        AWS Glue Job (PySpark)
+        • Conversão para parquet.
+        • Padronização
+        • Pré-aval. da qualidade dos dados
+                  │
+                  ▼
+          Amazon S3 (Camada Bronze)
                   │
                   ▼
         AWS Glue Job (PySpark)
@@ -116,7 +127,7 @@ realizado na **Amazon Web Services (AWS)**:
         • Integração
                   │
                   ▼
-          Amazon S3 (Silver)
+          Amazon S3 (Camada Silver)
                   │
                   ▼
         AWS Glue Job (PySpark)
@@ -128,7 +139,7 @@ realizado na **Amazon Web Services (AWS)**:
           Amazon S3 (Gold)
                   │
                   ▼
-      Machine Learning / Power BI
+      Machine Learning / Dashboards
 ```
 
 ---
@@ -143,6 +154,7 @@ postech-challenge-2/
 ├── .env.example               <- Modelo das variáveis de ambiente (copie para .env)
 │
 ├── check_env.py               <- Verificação do ambiente (Python + libs)
+├── config_vars.sh             <- Configura variáriaveis para shell scripts
 ├── test_environment.py        <- Verificação do ambiente
 ├── test_spark.py              <- Teste do Spark local
 ├── test_conexao.py            <- Teste de conexão com o Amazon S3
@@ -169,6 +181,13 @@ postech-challenge-2/
 │
 ├── references/                <- Materiais de apoio (demos de aula)
 ├── src/                       <- Código-fonte (data / features / models / viz)
+│   ├── aws
+│   │   ├── create_aws_resources.sh  <- Criação dos recursos na AWS
+│   │   ├── delete_aws_resources.sh  <- Deleção dos recursos na AWS
+│   │   ├── glue_etl_raw.py          <- Scripts Python para Glue Jobs (Raw)
+│   │   ├── glue_etl_bronze.py       <- Scripts Python para Glue Jobs (Bronze)
+│   │   ├── glue_etl_silver.py       <- Scripts Python para Glue Jobs (Silver)
+│   │   ├── glue_etl_gold.py         <- Scripts Python para Glue Jobs (Gold)
 ├── models/                    <- Modelos treinados / previsões
 ├── reports/figures/           <- Gráficos e figuras
 └── docs/                      <- Documentação (Sphinx)
@@ -255,7 +274,11 @@ S3_BUCKET=<seu_bucket_unico>
 > O arquivo `.env` **não deve ser versionado** (já deve constar no `.gitignore`).
 > Cada integrante usa suas próprias credenciais e seu próprio bucket.
 
+Além disso, configure o arquivo `~/.aws/credentials` para facilitar o uso do AWS CLI.
+
 ### 6. Criar o bucket S3 (Data Lake)
+
+Para a execução dos notebooks é necessário configurar um bucket.
 
 O nome do bucket é **globalmente único**. Sugestão de padrão:
 `alfabetizacao-data-lake-<seu-nome>`
@@ -306,6 +329,44 @@ Ao concluir, os dados brutos estarão materializados no S3, em
 
 ---
 
+### 10. Ambiente AWS
+
+
+Toda a configuração e execução no ambiente AWS é realizada de forma automatizada
+a partir de shell scripts.
+
+#### 10.1 - Configuração AWS CLI
+
+Altere o arquivo `~/.aws/credentials` de acordo para que o aws cli seja 
+utilizado adequamente ao executar os scripts abaixo.
+
+#### 10.2 - Configuração das variáveis
+
+Altere as variáveis definidas no arquivo config_vars.sh.
+
+#### 10.3 - Configuração do ambiente e execução
+
+Execute o script `create_aws_resources.sh` da seguinte forma:
+```bash
+bash src/aws/create_aws_resources.sh
+```
+
+O programa fará questionamentos ao longo da execução, para evitar esse comportamento,
+defina a variável AUTO_CONFIRM:
+```bash
+AUTOCONFIRM=1 bash src/aws/create_aws_resources.sh
+```
+
+#### 10.4 - Deleção dos recursos
+
+> Cuidado: Essa ação não pode ser desfeita!
+
+Ao final da execução delete os recursos gerados com o seguinte comando:
+```bash
+bash src/aws/delete_aws_resources.sh
+```
+
+
 ## Estado atual e próximos passos
 
 **Funcionando hoje (fim a fim até a Bronze):**
@@ -319,10 +380,6 @@ Ao concluir, os dados brutos estarão materializados no S3, em
 
 **Em construção:**
 
-- Ingestão na camada **Bronze** (PySpark → Parquet no S3).
-- **AWS Glue Job — Silver:** limpeza, padronização, validação e integração.
-- **AWS Glue Job — Gold:** agregações, regras de negócio e validação cruzada com os
-  resultados oficiais do INEP.
 - Consumo via **Amazon Athena** e entrega para **Power BI / Machine Learning**.
 
 > Os scripts em `references/` (`etl-bronze.py` e afins) são **demonstrações das aulas**
