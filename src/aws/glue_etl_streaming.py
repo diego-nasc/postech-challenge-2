@@ -194,7 +194,7 @@ def process_micro_batch(df_raw, epoch_id):
     (
         df_silver.write
         .mode("overwrite")
-        .partitionBy("ano", "rede")
+        .partitionBy("ano")
         .parquet(SILVER_MUNICIPIO_PATH)
     )
 
