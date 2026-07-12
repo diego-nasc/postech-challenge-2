@@ -223,7 +223,6 @@ Abaixo é apresentada a organização de pastas e scripts adotada para o desenvo
     │   ├── glue_elt_raw.py
     │   ├── glue_elt_silver.py
     │   ├── glue_elt_streaming.py
-    │   └── recreate_aws_resources.sh
     ├── data/                 # Scripts para geração e aquisição manual de datasets locais
     ├── features/             # Lógicas de Feature engineering para Machine Learning
     ├── models/               # Scripts para prototipagem e treino do pipeline de Machine Learning

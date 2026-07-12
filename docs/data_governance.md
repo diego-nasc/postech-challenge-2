@@ -27,10 +27,10 @@ A decisão de projeto foi **fazer do código a superfície de governança**:
 
 | Pilar                               | Como é implementado                                                                       | Onde vive                                         |
 | ----------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| Fonte única da verdade (infra)     | Provisionamento idempotente; jobs/crawlers em modo*DELETE + CREATE*                      | `recreate_aws_resources.sh`, `config_vars.sh` |
+| Fonte única da verdade (infra)     | Provisionamento idempotente; jobs/crawlers em modo*DELETE + CREATE*                      | `create_aws_resources.sh`, `config_vars.sh` |
 | Contratos de qualidade executáveis | Catálogo declarativo`CHECKS` + severidade + `raise` em falha crítica                 | `glue_elt_silver.py`, `glue_elt_gold.py`      |
 | Rastreabilidade em dois planos      | Metadados de linhagem**embutidos nos dados** + **logging operacional padronizado** | Todos os jobs                                     |
-| Catálogo automatizado              | Glue Crawlers → Glue Data Catalog → Athena                                               | `recreate_aws_resources.sh`                     |
+| Catálogo automatizado              | Glue Crawlers → Glue Data Catalog → Athena                                               | `create_aws_resources.sh`                     |
 | Idempotência / reprodutibilidade   | `partitionOverwriteMode=dynamic`, *guards* de estado, seed fixa no stream              | Todos os jobs                                     |
 
 ### 1.3 Fronteira de escopo — o que esta abordagem **não** cobre (por decisão)
@@ -39,7 +39,7 @@ Documentar os limites é parte da governança. Ficam **conscientemente fora** do
 escopo desta abordagem leve, e seriam o passo natural em um cenário produtivo:
 
 - **Segurança em nível de linha/coluna** (o papel do Lake Formation). Aqui o isolamento é físico, por *bucket* de camada.
-- **Grafo de linhagem automático entre jobs** (o papel do Atlas). Aqui a linhagem é rastreada por metadados por linha + logs, e a topologia do pipeline é lida no próprio orquestrador (`recreate_aws_resources.sh`).
+- **Grafo de linhagem automático entre jobs** (o papel do Atlas). Aqui a linhagem é rastreada por metadados por linha + logs, e a topologia do pipeline é lida no próprio orquestrador (`create_aws_resources.sh`).
 - **Data stewardship / glossário de negócio formal.** As definições de negócio vivem em comentários de código e dicionários (ex.: `PAPEIS_ALUNO_CONTEXTO`).
 
 ---
@@ -211,7 +211,7 @@ A evolução do pipeline — de **schema**, de **regra de negócio** e de **infr
 
 **Evolução de configuração (infra)**
 
-- **Fonte única da verdade.** `recreate_aws_resources.sh` (+ `config_vars.sh`) é a configuração autoritativa da infra. Jobs e crawlers usam *DELETE + CREATE*: qualquer mudança (`GlueVersion`, tipo/número de *workers*, argumentos, `ScriptLocation`) é aplicada no próximo *deploy*. Recursos persistentes (buckets, *databases*) usam *SKIP-IF-EXISTS*, evitando *drift* destrutivo.
+- **Fonte única da verdade.** `create_aws_resources.sh` (+ `config_vars.sh`) é a configuração autoritativa da infra. Jobs e crawlers usam *DELETE + CREATE*: qualquer mudança (`GlueVersion`, tipo/número de *workers*, argumentos, `ScriptLocation`) é aplicada no próximo *deploy*. Recursos persistentes (buckets, *databases*) usam *SKIP-IF-EXISTS*, evitando *drift* destrutivo.
 - **Idempotência como garantia de evolução.** Re-executar o pipeline é seguro: o `partitionOverwriteMode=dynamic` sobrescreve apenas as partições afetadas (preservando o histórico), e os *guards* de estado impedem *races* (nunca deletar crawler em `RUNNING`, nunca recriar job com *run* ativo).
 - **Compatibilidade batch ↔ streaming.** O stream grava linhas com schema **idêntico** ao do batch nas **mesmas** tabelas, impedindo bifurcação de contrato entre os dois regimes de ingestão.
 
@@ -230,6 +230,6 @@ Toda alteração de schema, regra ou infraestrutura corresponde a uma alteraçã
 | Semântica de`rede`, `norm_pct`, contratos de qualidade | `glue_elt_silver.py`        |
 | Metas diagonais, papéis de ML, vazamento                   | `glue_elt_gold.py`          |
 | Streaming em`ano=2026`, escopo de limpeza, checkpoint     | `glue_elt_streaming.py`     |
-| Idempotência,*guards*, crawlers, exclusões de catálogo | `recreate_aws_resources.sh` |
+| Idempotência,*guards*, crawlers, exclusões de catálogo | `create_aws_resources.sh` |
 
 *Os contratos de qualidade executáveis são detalhados em `docs/data_quality.md`.*

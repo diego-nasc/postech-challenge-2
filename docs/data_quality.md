@@ -329,6 +329,6 @@ Como todo evento é prefixado, a triagem no CloudWatch Logs (ou em `grep`) é di
 | Contrato de schema (`assert`), `checar_anos`, invariante de aluno  | `glue_elt_bronze.py`        |
 | Motor`checar_qualidade`, dicionário `CHECKS` (6 datasets)         | `glue_elt_silver.py`        |
 | Motor`checar_qualidade`, dicionário `CHECKS_GOLD` (3 datasets)    | `glue_elt_gold.py`          |
-| Aborto do pipeline em job`FAILED` (`espera_job_run` → `exit 1`) | `recreate_aws_resources.sh` |
+| Aborto do pipeline em job`FAILED` (`espera_job_run` → `exit 1`) | `create_aws_resources.sh` |
 
 *A visão estratégica de governança está em `docs/data_governance.md`.*
