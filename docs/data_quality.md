@@ -3,7 +3,7 @@
 
 > Companheiro técnico de `docs/data_governance.md`. Enquanto aquele documento dá a visão estratégica, este especifica os **contratos de qualidade executáveis** que o pipeline aplica — o que cada dataset precisa satisfazer para ser considerado válido, como isso é verificado em código e como o resultado é lido nos logs.
 >
-> **Fonte da verdade:** os dicionários `CHECKS` (`glue_etl_silver.py`) e `CHECKS_GOLD` (`glue_etl_gold.py`), mais as validações inline do Bronze (`glue_etl_bronze.py`). Este documento é o espelho legível desses artefatos.
+> **Fonte da verdade:** os dicionários `CHECKS` (`glue_elt_silver.py`) e `CHECKS_GOLD` (`glue_elt_gold.py`), mais as validações inline do Bronze (`glue_elt_bronze.py`). Este documento é o espelho legível desses artefatos.
 
 ---
 
@@ -326,9 +326,9 @@ Como todo evento é prefixado, a triagem no CloudWatch Logs (ou em `grep`) é di
 
 | Este documento cita                                                    | Arquivo                       |
 | ---------------------------------------------------------------------- | ----------------------------- |
-| Contrato de schema (`assert`), `checar_anos`, invariante de aluno  | `glue_etl_bronze.py`        |
-| Motor`checar_qualidade`, dicionário `CHECKS` (6 datasets)         | `glue_etl_silver.py`        |
-| Motor`checar_qualidade`, dicionário `CHECKS_GOLD` (3 datasets)    | `glue_etl_gold.py`          |
+| Contrato de schema (`assert`), `checar_anos`, invariante de aluno  | `glue_elt_bronze.py`        |
+| Motor`checar_qualidade`, dicionário `CHECKS` (6 datasets)         | `glue_elt_silver.py`        |
+| Motor`checar_qualidade`, dicionário `CHECKS_GOLD` (3 datasets)    | `glue_elt_gold.py`          |
 | Aborto do pipeline em job`FAILED` (`espera_job_run` → `exit 1`) | `recreate_aws_resources.sh` |
 
 *A visão estratégica de governança está em `docs/data_governance.md`.*

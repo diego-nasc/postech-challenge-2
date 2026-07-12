@@ -28,7 +28,7 @@ A decisão de projeto foi **fazer do código a superfície de governança**:
 | Pilar                               | Como é implementado                                                                       | Onde vive                                         |
 | ----------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------- |
 | Fonte única da verdade (infra)     | Provisionamento idempotente; jobs/crawlers em modo*DELETE + CREATE*                      | `recreate_aws_resources.sh`, `config_vars.sh` |
-| Contratos de qualidade executáveis | Catálogo declarativo`CHECKS` + severidade + `raise` em falha crítica                 | `glue_etl_silver.py`, `glue_etl_gold.py`      |
+| Contratos de qualidade executáveis | Catálogo declarativo`CHECKS` + severidade + `raise` em falha crítica                 | `glue_elt_silver.py`, `glue_elt_gold.py`      |
 | Rastreabilidade em dois planos      | Metadados de linhagem**embutidos nos dados** + **logging operacional padronizado** | Todos os jobs                                     |
 | Catálogo automatizado              | Glue Crawlers → Glue Data Catalog → Athena                                               | `recreate_aws_resources.sh`                     |
 | Idempotência / reprodutibilidade   | `partitionOverwriteMode=dynamic`, *guards* de estado, seed fixa no stream              | Todos os jobs                                     |
@@ -57,7 +57,7 @@ Cada camada tem **uma responsabilidade única** e um conjunto próprio de garant
 
 ### 2.1 Raw — fidelidade à fonte
 
-Responsável por capturar e preservar os dados disponibilizados pelo INEP antes de qualquer transformação analítica ou aplicação de regra de negócio (`glue_etl_raw.py`). É a âncora de rastreabilidade da origem: enquanto os dados da Raw existirem, as camadas a jusante podem ser reconstruídas.
+Responsável por capturar e preservar os dados disponibilizados pelo INEP antes de qualquer transformação analítica ou aplicação de regra de negócio (`glue_elt_raw.py`). É a âncora de rastreabilidade da origem: enquanto os dados da Raw existirem, as camadas a jusante podem ser reconstruídas.
 
 Garantias de governança:
 
@@ -67,7 +67,7 @@ Garantias de governança:
 
 ### 2.2 Bronze — contrato estrutural
 
-Responsável por converter os formatos crus em  **Parquet tipado e particionado por `NU_ANO_AVALIACAO`** , estabelecendo o primeiro contrato de schema (`glue_etl_bronze.py`).
+Responsável por converter os formatos crus em  **Parquet tipado e particionado por `NU_ANO_AVALIACAO`** , estabelecendo o primeiro contrato de schema (`glue_elt_bronze.py`).
 
 Garantias de governança:
 
@@ -78,7 +78,7 @@ Garantias de governança:
 
 ### 2.3 Silver — conformação e qualidade
 
-Responsável por **limpar, conformar e aplicar regras de negócio**, entregando tabelas semanticamente corretas (`glue_etl_silver.py`). É aqui que os **contratos de qualidade executáveis** entram em cena.
+Responsável por **limpar, conformar e aplicar regras de negócio**, entregando tabelas semanticamente corretas (`glue_elt_silver.py`). É aqui que os **contratos de qualidade executáveis** entram em cena.
 
 Garantias de governança:
 
@@ -91,7 +91,7 @@ Garantias de governança:
 
 ### 2.4 Gold — modelagem para consumo
 
-Responsável por produzir os **indicadores analíticos** e as tabelas prontas para BI e ML (`glue_etl_gold.py`).
+Responsável por produzir os **indicadores analíticos** e as tabelas prontas para BI e ML (`glue_elt_gold.py`).
 
 Garantias de governança:
 
@@ -169,7 +169,7 @@ A tabela abaixo organiza essas mensagens em  **categorias semânticas de operaç
 | Categoria semântica     | Evento                                            | Evidência no código (hoje)                                                                           |
 | ------------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `JOB_STARTED`          | Início de um job                                 | `log.info("Iniciando job Bronze...")`                                                                |
-| `INGESTION_RETRY`      | Tentativa de transferência falhou, novo*retry* | `log.warning("Tentativa X/Y falhou (...). Retry em Ns...")` (`glue_etl_raw.py`)                    |
+| `INGESTION_RETRY`      | Tentativa de transferência falhou, novo*retry* | `log.warning("Tentativa X/Y falhou (...). Retry em Ns...")` (`glue_elt_raw.py`)                    |
 | `DATASET_WRITTEN`      | Um dataset foi gravado no lake                    | `log.info("silver/uf gravada. Total: %s", ...)`, `log.info("gold/indicadores_municipio: %s", ...)` |
 | `DQ_CHECK`             | Resultado de um*check* individual               | `[DQ:SILVER] PASS \| unique \| [ano, id_municipio, rede] \| ...`                                        |
 | `DATA_QUALITY_PASSED`  | Tabela aprovada (score consolidado)               | `[DQ:SILVER] municipio \| Score=100.0% \| PASS=9 FAIL=0`                                               |
@@ -225,11 +225,11 @@ Toda alteração de schema, regra ou infraestrutura corresponde a uma alteraçã
 
 | Documento cita                                              | Arquivo                       |
 | ----------------------------------------------------------- | ----------------------------- |
-| Captura resiliente,*retry*, `verify=False`              | `glue_etl_raw.py`           |
-| Contratos de tipo, linhagem, robustez a *drift*          | `glue_etl_bronze.py`        |
-| Semântica de`rede`, `norm_pct`, contratos de qualidade | `glue_etl_silver.py`        |
-| Metas diagonais, papéis de ML, vazamento                   | `glue_etl_gold.py`          |
-| Streaming em`ano=2026`, escopo de limpeza, checkpoint     | `glue_etl_streaming.py`     |
+| Captura resiliente,*retry*, `verify=False`              | `glue_elt_raw.py`           |
+| Contratos de tipo, linhagem, robustez a *drift*          | `glue_elt_bronze.py`        |
+| Semântica de`rede`, `norm_pct`, contratos de qualidade | `glue_elt_silver.py`        |
+| Metas diagonais, papéis de ML, vazamento                   | `glue_elt_gold.py`          |
+| Streaming em`ano=2026`, escopo de limpeza, checkpoint     | `glue_elt_streaming.py`     |
 | Idempotência,*guards*, crawlers, exclusões de catálogo | `recreate_aws_resources.sh` |
 
 *Os contratos de qualidade executáveis são detalhados em `docs/data_quality.md`.*

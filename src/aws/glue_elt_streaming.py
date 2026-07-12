@@ -31,9 +31,9 @@ from awsglue.utils import getResolvedOptions
 # historicas (2023-2025) sao preservadas.
 #
 # Contrato (alinhado 1:1 ao batch, decisao (i)):
-#   - Silver: particionada SOMENTE por 'ano' (igual a glue_etl_silver); mesmo
+#   - Silver: particionada SOMENTE por 'ano' (igual a glue_elt_silver); mesmo
 #     conjunto de colunas (inclui _silver_processed_at, sem colunas extras).
-#   - Gold: SQL identico ao glue_etl_gold (mesmos rotulos ACENTUADOS e mesmo
+#   - Gold: SQL identico ao glue_elt_gold (mesmos rotulos ACENTUADOS e mesmo
 #     schema, inclui _gold_processed_at).
 #
 # Acumulacao (decisao (B)): a cada micro-lote, le o estado atual de ano=2026,
@@ -59,8 +59,8 @@ log.addHandler(handler)
 # ============================================================
 # JOB_NAME      - nome do job
 # BUCKET_RAW    - bucket raw; recebe os eventos crus simulados do stream
-# BUCKET_SILVER - bucket da camada silver (mesmo do glue_etl_silver)
-# BUCKET_GOLD   - bucket da camada gold (mesmo do glue_etl_gold)
+# BUCKET_SILVER - bucket da camada silver (mesmo do glue_elt_silver)
+# BUCKET_GOLD   - bucket da camada gold (mesmo do glue_elt_gold)
 args = getResolvedOptions(
     sys.argv,
     ["JOB_NAME", "BUCKET_RAW", "BUCKET_SILVER", "BUCKET_GOLD"],
@@ -151,7 +151,7 @@ s3_client = boto3.client("s3")
 
 
 # ============================================================
-# GOLD: SQL IDENTICO AO glue_etl_gold (indicadores_municipio)
+# GOLD: SQL IDENTICO AO glue_elt_gold (indicadores_municipio)
 # ============================================================
 # Copiado VERBATIM do batch para garantir mesmo schema e mesmos rotulos
 # (ACENTUADOS: 'Proximo'->'Próximo', 'Media'->'Média'). As views
@@ -228,7 +228,7 @@ LEFT JOIN meta_long ml ON r.ano = ml.ano AND r.id_municipio = ml.id_municipio
 
 
 def add_gold_metadata(df):
-    # Mesmo carimbo do batch (glue_etl_gold), para o schema da Gold casar 1:1.
+    # Mesmo carimbo do batch (glue_elt_gold), para o schema da Gold casar 1:1.
     return df.withColumn("_gold_processed_at", F.lit(STREAM_TS))
 
 
@@ -339,7 +339,7 @@ def produzir(eventos):
 
 
 # ============================================================
-# TRANSFORM SILVER (row-wise, fiel ao glue_etl_silver / notebook 04)
+# TRANSFORM SILVER (row-wise, fiel ao glue_elt_silver / notebook 04)
 # ============================================================
 # Schema IDENTICO ao Silver batch de municipio: sem colunas extras; apenas o
 # carimbo _silver_processed_at (que o batch tambem grava).
@@ -432,12 +432,12 @@ def main():
     log.info("STREAM_INPUT: %s", STREAM_INPUT)
     log.info("CKPT        : %s", CKPT)
 
-    # A meta do ano corrente ja foi gravada pelo batch (glue_etl_silver).
+    # A meta do ano corrente ja foi gravada pelo batch (glue_elt_silver).
     # Aqui apenas validamos que a tabela existe; nao ha bootstrap de meta.
     if not existe_no_lake(META_SILVER_PATH):
         raise FileNotFoundError(
             f"Tabela Silver nao encontrada: {META_SILVER_PATH}. "
-            "Execute o pipeline batch (glue_etl_silver) antes da ingestao streaming."
+            "Execute o pipeline batch (glue_elt_silver) antes da ingestao streaming."
         )
 
     # Registra a META uma unica vez (cacheada) -> evita reler o S3 por micro-lote.

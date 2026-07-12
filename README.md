@@ -218,11 +218,11 @@ Abaixo é apresentada a organização de pastas e scripts adotada para o desenvo
     ├── aws/                  # Infraestrutura Bash e jobs PySpark para o AWS Glue (Raw -> Bronze -> Silver -> Gold -> Streaming)
     │   ├── create_aws_resources.sh
     │   ├── delete_aws_resources.sh
-    │   ├── glue_etl_bronze.py
-    │   ├── glue_etl_gold.py
-    │   ├── glue_etl_raw.py
-    │   ├── glue_etl_silver.py
-    │   ├── glue_etl_streaming.py
+    │   ├── glue_elt_bronze.py
+    │   ├── glue_elt_gold.py
+    │   ├── glue_elt_raw.py
+    │   ├── glue_elt_silver.py
+    │   ├── glue_elt_streaming.py
     │   └── recreate_aws_resources.sh
     ├── data/                 # Scripts para geração e aquisição manual de datasets locais
     ├── features/             # Lógicas de Feature engineering para Machine Learning

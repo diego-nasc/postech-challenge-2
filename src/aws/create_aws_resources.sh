@@ -158,8 +158,8 @@ echo "Criando glue jobs..."
 # 5.1 - Glue job para a RAW
 
 # 5.1.1 - sobe script para o S3
-aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_raw.py \
-    s3://${BUCKET_SCRIPTS}/glue_etl_raw.py
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_elt_raw.py \
+    s3://${BUCKET_SCRIPTS}/glue_elt_raw.py
 
 # 5.1.2 - cria job
 aws --region ${AWS_REGION} glue create-job \
@@ -167,7 +167,7 @@ aws --region ${AWS_REGION} glue create-job \
     --role "${ROLE_NAME}" \
     --command "{
         \"Name\": \"pythonshell\",
-        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_raw.py\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_raw.py\",
         \"PythonVersion\": \"3.9\"
     }" \
     --default-arguments "{
@@ -213,8 +213,8 @@ aws s3 cp /tmp/spark-excel_2.12-3.5.1_0.20.4.jar \
   --region ${AWS_REGION}
 
 # 5.2.1 - sobe script para o S3
-aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_bronze.py \
-    s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_elt_bronze.py \
+    s3://${BUCKET_SCRIPTS}/glue_elt_bronze.py
 
 # 5.2.2 - cria job
 aws --region ${AWS_REGION} glue create-job \
@@ -225,7 +225,7 @@ aws --region ${AWS_REGION} glue create-job \
     --number-of-workers 2 \
     --command "{
         \"Name\": \"glueetl\",
-        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_bronze.py\",
         \"PythonVersion\": \"3\"
     }" \
     --default-arguments "{
@@ -264,8 +264,8 @@ aws --region ${AWS_REGION} glue start-crawler \
 # 5.3 - Glue job para a SILVER
 
 # 5.3.1 - sobe script para o S3
-aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_silver.py \
-    s3://${BUCKET_SCRIPTS}/glue_etl_silver.py
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_elt_silver.py \
+    s3://${BUCKET_SCRIPTS}/glue_elt_silver.py
 
 # 5.3.2 - cria job
 aws --region ${AWS_REGION} glue create-job \
@@ -276,7 +276,7 @@ aws --region ${AWS_REGION} glue create-job \
     --number-of-workers 2 \
     --command "{
         \"Name\": \"glueetl\",
-        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_silver.py\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_silver.py\",
         \"PythonVersion\": \"3\"
     }" \
     --default-arguments "{
@@ -314,8 +314,8 @@ aws --region ${AWS_REGION} glue start-crawler \
 # 5.4 - Glue job para a GOLD
 
 # 5.4.1 - sobe script para o S3
-aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_etl_gold.py \
-    s3://${BUCKET_SCRIPTS}/glue_etl_gold.py
+aws --region ${AWS_REGION} s3 cp ${SCRIPT_DIR}/glue_elt_gold.py \
+    s3://${BUCKET_SCRIPTS}/glue_elt_gold.py
 
 # 5.4.2 - cria job
 aws --region ${AWS_REGION} glue create-job \
@@ -326,7 +326,7 @@ aws --region ${AWS_REGION} glue create-job \
     --number-of-workers 2 \
     --command "{
         \"Name\": \"glueetl\",
-        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_gold.py\",
+        \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_gold.py\",
         \"PythonVersion\": \"3\"
     }" \
     --default-arguments "{

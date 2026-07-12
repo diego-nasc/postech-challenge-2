@@ -298,14 +298,14 @@ fi
 if confirma "Deseja (re)criar e executar os glue jobs?"; then
 
   # ---------------- 5.1 - RAW (pythonshell) ----------------
-  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_etl_raw.py" \
-      "s3://${BUCKET_SCRIPTS}/glue_etl_raw.py"
+  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_elt_raw.py" \
+      "s3://${BUCKET_SCRIPTS}/glue_elt_raw.py"
 
   prepara_recriacao_job "glue-job-raw-etl"
   aws --region "${AWS_REGION}" glue create-job \
       --name "glue-job-raw-etl" \
       --role "${ROLE_NAME}" \
-      --command "{\"Name\": \"pythonshell\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_raw.py\", \"PythonVersion\": \"3.9\"}" \
+      --command "{\"Name\": \"pythonshell\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_raw.py\", \"PythonVersion\": \"3.9\"}" \
       --default-arguments "{\"--JOB_NAME\": \"glue-job-raw-etl\", \"--BUCKET_RAW\": \"${BUCKET_RAW}\", \"--MAX_TENTATIVAS\": \"3\"}"
 
   aws --region "${AWS_REGION}" glue start-job-run --job-name "glue-job-raw-etl"
@@ -324,8 +324,8 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
   aws --region "${AWS_REGION}" s3 cp "${JAR_LOCAL}" \
       "s3://${BUCKET_SCRIPTS}/jars/spark-excel_2.12-3.5.1_0.20.4.jar"
 
-  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_etl_bronze.py" \
-      "s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py"
+  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_elt_bronze.py" \
+      "s3://${BUCKET_SCRIPTS}/glue_elt_bronze.py"
 
   prepara_recriacao_job "glue-job-bronze-etl"
   aws --region "${AWS_REGION}" glue create-job \
@@ -334,7 +334,7 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
       --glue-version "5.1" \
       --worker-type "G.1X" \
       --number-of-workers 2 \
-      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_bronze.py\", \"PythonVersion\": \"3\"}" \
+      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_bronze.py\", \"PythonVersion\": \"3\"}" \
       --default-arguments "{\"--JOB_NAME\": \"glue-job-bronze-etl\", \"--BUCKET_BRONZE\": \"${BUCKET_BRONZE}\", \"--BUCKET_RAW\": \"${BUCKET_RAW}\", \"--extra-jars\": \"s3://${BUCKET_SCRIPTS}/jars/spark-excel_2.12-3.5.1_0.20.4.jar\"}"
 
   aws --region "${AWS_REGION}" glue start-job-run --job-name "glue-job-bronze-etl"
@@ -342,8 +342,8 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
   inicia_crawler "crawler-bronze"
 
   # ---------------- 5.3 - SILVER (glueetl) ----------------
-  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_etl_silver.py" \
-      "s3://${BUCKET_SCRIPTS}/glue_etl_silver.py"
+  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_elt_silver.py" \
+      "s3://${BUCKET_SCRIPTS}/glue_elt_silver.py"
 
   prepara_recriacao_job "glue-job-silver-etl"
   aws --region "${AWS_REGION}" glue create-job \
@@ -352,7 +352,7 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
       --glue-version "5.1" \
       --worker-type "G.1X" \
       --number-of-workers 2 \
-      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_silver.py\", \"PythonVersion\": \"3\"}" \
+      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_silver.py\", \"PythonVersion\": \"3\"}" \
       --default-arguments "{\"--JOB_NAME\": \"glue-job-silver-etl\", \"--BUCKET_BRONZE\": \"${BUCKET_BRONZE}\", \"--BUCKET_SILVER\": \"${BUCKET_SILVER}\"}"
 
   aws --region "${AWS_REGION}" glue start-job-run --job-name "glue-job-silver-etl"
@@ -360,8 +360,8 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
   inicia_crawler "crawler-silver"
 
   # ---------------- 5.4 - GOLD (glueetl) ----------------
-  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_etl_gold.py" \
-      "s3://${BUCKET_SCRIPTS}/glue_etl_gold.py"
+  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_elt_gold.py" \
+      "s3://${BUCKET_SCRIPTS}/glue_elt_gold.py"
 
   prepara_recriacao_job "glue-job-gold-etl"
   aws --region "${AWS_REGION}" glue create-job \
@@ -370,7 +370,7 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
       --glue-version "5.1" \
       --worker-type "G.1X" \
       --number-of-workers 2 \
-      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_gold.py\", \"PythonVersion\": \"3\"}" \
+      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_gold.py\", \"PythonVersion\": \"3\"}" \
       --default-arguments "{\"--JOB_NAME\": \"glue-job-gold-etl\", \"--BUCKET_SILVER\": \"${BUCKET_SILVER}\", \"--BUCKET_GOLD\": \"${BUCKET_GOLD}\"}"
 
   aws --region "${AWS_REGION}" glue start-job-run --job-name "glue-job-gold-etl"
@@ -381,8 +381,8 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
   # Structured Streaming com fonte de arquivos no S3. Auto-encerra
   # (produtor -> processAllAvailable -> stop) => glueetl comum + espera_job_run.
   # Escreve a particao ano=2026 em silver/municipio e gold/indicadores_municipio.
-  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_etl_streaming.py" \
-      "s3://${BUCKET_SCRIPTS}/glue_etl_streaming.py"
+  aws --region "${AWS_REGION}" s3 cp "${SCRIPT_DIR}/glue_elt_streaming.py" \
+      "s3://${BUCKET_SCRIPTS}/glue_elt_streaming.py"
 
   prepara_recriacao_job "glue-job-streaming-etl"
   aws --region "${AWS_REGION}" glue create-job \
@@ -391,7 +391,7 @@ if confirma "Deseja (re)criar e executar os glue jobs?"; then
       --glue-version "5.1" \
       --worker-type "G.1X" \
       --number-of-workers 2 \
-      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_etl_streaming.py\", \"PythonVersion\": \"3\"}" \
+      --command "{\"Name\": \"glueetl\", \"ScriptLocation\": \"s3://${BUCKET_SCRIPTS}/glue_elt_streaming.py\", \"PythonVersion\": \"3\"}" \
       --default-arguments "{\"--JOB_NAME\": \"glue-job-streaming-etl\", \"--BUCKET_RAW\": \"${BUCKET_RAW}\", \"--BUCKET_SILVER\": \"${BUCKET_SILVER}\", \"--BUCKET_GOLD\": \"${BUCKET_GOLD}\"}"
 
   aws --region "${AWS_REGION}" glue start-job-run --job-name "glue-job-streaming-etl"
