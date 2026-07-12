@@ -1,205 +1,234 @@
-
 # Postech Challenge 2 — Análise da Alfabetização no Brasil
-
-Pipeline de dados (Arquitetura Medalhão: Bronze → Silver → Gold) para análise da
-**Avaliação da Alfabetização (INEP/Saeb)** no Brasil, com ingestão *batch* a partir
-das fontes oficiais, processamento na **AWS** (S3 + Glue/PySpark) e entrega
-de dados prontos para **Machine Learning**.
 
 Repositório: [https://github.com/diego-nasc/postech-challenge-2](https://github.com/diego-nasc/postech-challenge-2)
 
----
+### Contexto deo Problema
 
-## Sumário
+A alfabetização na infância constitui uma etapa fundamental para o desenvolvimento educacional e social. No Brasil, o **Compromisso Nacional Criança Alfabetizada** estabelece como objetivo garantir que as crianças estejam alfabetizadas ao final do 2º ano do ensino fundamental, além de apoiar a recomposição das aprendizagens dos estudantes afetados por defasagens educacionais.
 
-- [Arquitetura](#arquitetura)
-- [Estrutura do projeto](#estrutura-do-projeto)
-- [Pré-requisitos](#pré-requisitos)
-- [Passo a passo (setup do zero)](#passo-a-passo-setup-do-zero)
-  - [1. Clonar o repositório](#1-clonar-o-repositório)
-  - [2. Criar o ambiente Conda](#2-criar-o-ambiente-conda)
-  - [3. Ativar o ambiente](#3-ativar-o-ambiente)
-  - [4. Verificar o ambiente (Python + Spark)](#4-verificar-o-ambiente-python--spark)
-  - [5. Configurar as credenciais AWS (.env)](#5-configurar-as-credenciais-aws-env)
-  - [6. Criar o bucket S3 (Data Lake)](#6-criar-o-bucket-s3-data-lake)
-  - [7. Baixar os dados oficiais do INEP](#7-baixar-os-dados-oficiais-do-inep)
-  - [8. Testar a conexão com o S3](#8-testar-a-conexão-com-o-s3)
-  - [9. Executar o pipeline (camada Bronze)](#9-executar-o-pipeline-camada-bronze)
-  - [10. Ambiente AWS](#10-ambiente-aws)
-- [Estado atual e próximos passos](#estado-atual-e-próximos-passos)
-- [Observações importantes / Troubleshooting](#observações-importantes--troubleshooting)
+O acompanhamento desse cenário depende da integração de diferentes informações educacionais. Resultados de avaliação, metas nacionais, estaduais e municipais e microdados de estudantes são publicados em arquivos com diferentes estruturas, granularidades e padrões de representação.
+
+Essa fragmentação dificulta a construção de análises integradas e reproduzíveis. Comparar o desempenho observado com as metas educacionais, acompanhar a evolução temporal dos indicadores e identificar desigualdades territoriais exige um processo consistente de ingestão, padronização, validação e integração dos dados.
+
+Neste contexto, o projeto propõe uma pipeline de engenharia de dados em nuvem para transformar dados públicos de alfabetização em datasets analíticos confiáveis, rastreáveis e preparados para análises estatísticas e futuras aplicações de Inteligência Artificial.
 
 ---
 
-## Arquitetura
+### Desafio Educacional e Indicador de Alfabetização
 
-O projeto segue a **Arquitetura Medalhão (Medallion Architecture)**:
+O projeto utiliza dados da **Avaliação da Alfabetização**, disponibilizados pelo Instituto Nacional de Estudos e Pesquisas Educacionais Anísio Teixeira — INEP.
 
-- **Bronze:** dados oficiais ingeridos e preservados no formato original.
-- **Silver:** dados limpos, padronizados, integrados e validados.
-- **Gold:** dados consolidados e agregados, prontos para análise e consumo.
+O principal indicador analisado é o **Indicador Criança Alfabetizada**, construído a partir da escala de proficiência do Sistema de Avaliação da Educação Básica — Saeb.
 
-### Ingestão dos dados
+Na metodologia utilizada, o ponto de corte de **743 pontos de proficiência** representa o nível a partir do qual o estudante é considerado alfabetizado. Esse critério permite calcular taxas agregadas de alfabetização e acompanhar a evolução dos resultados por município e Unidade da Federação.
 
-Como os resultados da Avaliação da Alfabetização são publicados **anualmente** pelo
-INEP, trata-se de um cenário de atualização periódica, diferentemente de sistemas
-transacionais que exigem captura contínua de eventos. Dessa forma, optou-se pela
-**ingestão *batch***, na qual os dados são obtidos da fonte de origem, persistidos na
-camada Bronze e reutilizados nas etapas subsequentes da pipeline.
+Entretanto, analisar apenas o indicador observado não é suficiente. Para interpretar o desempenho educacional, é necessário relacionar os resultados às metas estabelecidas para cada território e período.
 
-Durante o desenvolvimento foram avaliadas diferentes estratégias de ingestão:
+A pipeline integra dados históricos de **2023 a 2025**, incluindo:
 
-1. **Download manual pela Base dos Dados (interface web)** — inadequada para grandes
-   volumes: o download da tabela de alunos (~3,9 milhões de registros) não pôde ser
-   concluído, evidenciando que o portal é mais apropriado para consultas e arquivos
-   menores.
-2. **Biblioteca `basedosdados` (consulta ao Google BigQuery)** — tecnicamente viável e
-   automatizável, porém introduzia dependência da infraestrutura de um serviço de
-   terceiros e sujeitava a disponibilidade dos dados à sincronização da Base dos Dados,
-   com possível defasagem em relação aos arquivos oficiais do INEP.
-3. **Fonte primária do INEP (escolhida)** — uso direto dos arquivos oficiais publicados
-   anualmente (`microdados_AEEB_YYYY`, `resultados_e_metas_municipios_YYYY`,
-   `resultados_e_metas_ufs_YYYY`).
+* microdados de alunos;
+* indicadores agregados por município;
+* indicadores agregados por Unidade da Federação;
+* metas nacionais;
+* metas estaduais;
+* metas municipais.
 
-A opção pela fonte primária oferece:
+A integração dessas entidades permite responder questões como:
 
-- utilização da fonte oficial, sem intermediários;
-- acesso aos microdados completos, incluindo a base de alunos;
-- eliminação da dependência de serviços de terceiros;
-- preservação integral dos dados originais na Bronze, favorecendo auditoria e
-  reprodutibilidade;
-- maior aderência ao conceito de *Data Lake*, armazenando os arquivos exatamente como
-  foram publicados pelo INEP.
-
-A camada Bronze armazena os arquivos **sem qualquer transformação**. Limpeza,
-padronização, validação, integração entre entidades e geração dos datasets analíticos
-ocorrem depois, nas camadas Silver e Gold.
-
-### Computação em nuvem
-
-Embora a origem dos dados seja o portal oficial do INEP, todo o **processamento** é
-realizado na **Amazon Web Services (AWS)**:
-
-- Os arquivos brutos são armazenados no **Amazon S3**, que atua como *Data Lake*.
-- As transformações **Bronze**, **Silver** e **Gold** são executadas por 
-  **AWS Glue Jobs** com **PySpark**, permitindo processamento distribuído e escalável.
-- Regras de qualidade (duplicidade, valores ausentes, validação de chaves e
-  consistência entre tabelas) são aplicadas durante as transformações nos próprios
-  Glue Jobs.
-- Os resultados são gravados no S3 em **Apache Parquet**, reduzindo armazenamento e
-  custo e melhorando o desempenho analítico.
-- Como validação de ponta a ponta, o indicador de alfabetização reconstruído a partir
-  dos microdados dos alunos (Gold) é comparado aos resultados oficiais do INEP por
-  município.
-- A camada Gold entrega datasets prontos para **Business Intelligence** e para
-  treinamento de modelos de **Machine Learning**.
-
-### Fluxograma da arquitetura
-
-```
-              Fonte Oficial (INEP)
-
-        Arquivos oficiais do INEP
-                  │
-──────────────────── AWS ────────────────────
-                  │
-                  ▼
-        AWS Glue Job (PythonShell)
-           Python (Ingestão)
-                  │
-                  ▼
-          Amazon S3 (Camada Raw)
-                  │
-                  ▼
-        AWS Glue Job (PySpark)
-        • Conversão para parquet.
-        • Padronização
-        • Pré-aval. da qualidade dos dados
-                  │
-                  ▼
-          Amazon S3 (Camada Bronze)
-                  │
-                  ▼
-        AWS Glue Job (PySpark)
-        • Limpeza
-        • Padronização
-        • Qualidade dos dados
-        • Integração
-                  │
-                  ▼
-          Amazon S3 (Camada Silver)
-                  │
-                  ▼
-        AWS Glue Job (PySpark)
-        • Agregações
-        • Regras de negócio
-        • Validação cruzada
-                  │
-                  ▼
-          Amazon S3 (Gold)
-                  │
-                  ▼
-      Machine Learning / Dashboards
-```
+* quais municípios atingiram suas metas de alfabetização;
+* qual é a distância entre o resultado observado e a meta prevista;
+* como os indicadores evoluem ao longo do tempo;
+* quais territórios apresentam desempenho abaixo do esperado;
+* quais bases podem ser utilizadas para futuras análises preditivas e territoriais.
 
 ---
 
-## Estrutura do projeto
+### Arquitetura Proposta
 
-```
-postech-challenge-2/
-├── environment.yml            <- Ambiente Conda (fonte da verdade do setup)
-├── requirements.txt           <- Dependências (referência)
-├── setup.py                   <- Torna o pacote `src` instalável (pip install -e .)
-├── .env.example               <- Modelo das variáveis de ambiente (copie para .env)
-│
-├── check_env.py               <- Verificação do ambiente (Python + libs)
-├── config_vars.sh             <- Configura variáriaveis para shell scripts
-├── test_environment.py        <- Verificação do ambiente
-├── test_spark.py              <- Teste do Spark local
-├── test_conexao.py            <- Teste de conexão com o Amazon S3
-│
-├── data_lake/                 <- Data Lake local (conteúdo ignorado pelo Git)
-│   ├── external/              <- Arquivos oficiais do INEP (fonte)
-│   │   ├── microdados_avaliacao_da_alfabetizacao_2023.zip
-│   │   ├── microdados_avaliacao_da_alfabetizacao_2024.zip
-│   │   ├── microdados_AEEB_2025.zip        <- 2025 quebra o padrão de nome
-│   │   └── extraidos/
-│   │       ├── 2023/  (TS_ALUNO.csv, TS_ESTADO.csv, TS_MUNICIPIO.csv, *.xlsx)
-│   │       ├── 2024/  (TS_ALUNO.csv, TS_ESTADO.csv, TS_MUNICIPIO.csv, *.xlsx)
-│   │       └── 2025/  (TS_ALUNO.csv, TS_ESTADO.csv, TS_MUNICIPIO.csv, *.xlsx)
-│   ├── bronze/                <- (materializada no S3)
-│   ├── silver/                <- (materializada no S3)
-│   └── gold/                  <- (materializada no S3)
-│
-├── notebooks/
-│   ├── 00_aquisicao_dados.ipynb   <- Download + extração dos arquivos do INEP
-│   ├── 01_exploracao.ipynb        <- Exploração das entidades (CSV/XLSX)
-│   ├── 02_teste_conexao.ipynb     <- Validação da conexão com o S3
-│   ├── 02_Pipeline.ipynb          <- Ingestão Bronze no S3 (PySpark + S3A)
-│   └── ETL_Pipeline.ipynb
-│
-├── references/                <- Materiais de apoio (demos de aula)
-├── src/                       <- Código-fonte (data / features / models / viz)
-│   ├── aws
-│   │   ├── create_aws_resources.sh  <- Criação dos recursos na AWS
-│   │   ├── delete_aws_resources.sh  <- Deleção dos recursos na AWS
-│   │   ├── glue_etl_raw.py          <- Scripts Python para Glue Jobs (Raw)
-│   │   ├── glue_etl_bronze.py       <- Scripts Python para Glue Jobs (Bronze)
-│   │   ├── glue_etl_silver.py       <- Scripts Python para Glue Jobs (Silver)
-│   │   ├── glue_etl_gold.py         <- Scripts Python para Glue Jobs (Gold)
-├── models/                    <- Modelos treinados / previsões
-├── reports/figures/           <- Gráficos e figuras
-└── docs/                      <- Documentação (Sphinx)
-```
+Foi implementada uma arquitetura de **Data Lake na AWS**, baseada no padrão **Medallion Architecture**.
 
-> **Nota sobre os arquivos XLSX de metas:** os nomes variam por ano
-> (`resultados_e_metas_municipios.xlsx`, `..._2024.xlsx`, `..._2025_v2.xlsx`, etc.).
-> Além disso, os arquivos do INEP são **ISO-8859-1**, separados por `;`, e os XLSX
-> costumam ter linhas de título e células mescladas. Para os anos posteriores a 2025, **inspecione o arquivo bruto
-> antes de leituras estruturadas**.
+A solução combina ingestão **batch** com uma simulação de processamento de eventos em tempo quase real utilizando **Spark Structured Streaming**.
+
+A arquitetura é organizada em quatro zonas de armazenamento:
+
+* **Raw:** preservação dos arquivos capturados diretamente da fonte;
+* **Bronze:** aplicação do contrato estrutural e conversão dos dados para Parquet;
+* **Silver:** limpeza, padronização, conformação semântica e validação de qualidade;
+* **Gold:** materialização das regras de negócio e criação dos datasets analíticos.
+
+O processamento é executado por jobs PySpark no **AWS Glue**, enquanto os dados são armazenados no **Amazon S3**.
+
+Os datasets são catalogados automaticamente por **AWS Glue Crawlers** no **Glue Data Catalog** e podem ser consultados utilizando SQL por meio do **Amazon Athena**.
+
+A infraestrutura e a sequência de execução dos jobs são controladas por scripts Bash e AWS CLI.
 
 ---
+
+### Descrição da Arquitetura da Solução
+
+A arquitetura foi construída com separação explícita de responsabilidades entre as camadas.
+
+#### Raw
+
+A camada Raw representa a zona de captura da fonte.
+
+O job de ingestão acessa os arquivos oficiais do INEP e realiza a transferência diretamente para o Amazon S3. Os arquivos ZIP são processados seletivamente para extrair apenas os datasets necessários ao projeto.
+
+A transferência utiliza leitura HTTP em fluxo, evitando carregar integralmente os arquivos em memória. Também foi implementado um mecanismo de retry para falhas de download.
+
+O objetivo da Raw é preservar os arquivos recebidos da fonte antes da aplicação das regras estruturais e semânticas do pipeline.
+
+#### Bronze
+
+A Bronze estabelece o contrato estrutural dos dados.
+
+Os arquivos CSV e XLSX são lidos utilizando schemas explícitos definidos para cada entidade e, quando necessário, para cada ano de publicação. Essa estratégia trata as diferenças de layout identificadas entre os arquivos de 2023, 2024 e 2025.
+
+As colunas são selecionadas por nome. Mudanças aditivas na fonte podem ser ignoradas quando estão fora do contrato, enquanto a ausência ou alteração de uma coluna obrigatória provoca falha explícita do job.
+
+Os dados são convertidos para **Parquet** e particionados pelo ano da avaliação.
+
+Também são adicionados metadados técnicos de rastreabilidade, incluindo o arquivo de origem e o timestamp de ingestão.
+
+#### Silver
+
+A Silver é responsável pela conformação semântica e pela qualidade dos dados.
+
+Nesta camada são executadas operações como:
+
+* normalização de identificadores municipais;
+* padronização de tipos;
+* tratamento de percentuais;
+* interpretação dos códigos de rede de ensino;
+* tratamento de valores ausentes;
+* validação de unicidade;
+* validação de domínio;
+* verificação dos anos esperados.
+
+Valores de metas como `>80` são normalizados para representação numérica, mantendo documentada a semântica de que a meta original representa superar 80%.
+
+Nos microdados de alunos, registros sem proficiência recebem valor nulo na classificação de alfabetização. Dessa forma, estudantes sem medição não são classificados incorretamente como não alfabetizados.
+
+A Silver disponibiliza seis datasets conformados:
+
+* metas do Brasil;
+* metas por UF;
+* metas municipais;
+* indicadores por UF;
+* indicadores municipais;
+* microdados de alunos.
+
+#### Gold
+
+A Gold materializa as regras de negócio e cria datasets orientados ao consumo analítico.
+
+Foram produzidas três tabelas:
+
+### `indicadores_municipio`
+
+Integra resultados municipais, participação e metas.
+
+Disponibiliza métricas como:
+
+* distância até a meta;
+* indicador de atingimento da meta;
+* categoria de desempenho;
+* faixa de participação.
+
+### `indicadores_uf`
+
+Integra resultados e metas por Unidade da Federação.
+
+Permite comparar o desempenho estadual com os objetivos definidos para cada período.
+
+### `aluno_contexto`
+
+Integra os microdados dos estudantes ao contexto municipal.
+
+A tabela disponibiliza uma variável-alvo de alfabetização e classifica as colunas conforme seu papel em futuras aplicações de Machine Learning, incluindo a identificação explícita de variáveis que representam vazamento de informação.
+
+---
+
+### Diagrama da Pipeline
+
+```mermaid
+flowchart LR
+    A[INEP<br/>CSV, XLSX e ZIP] --> B[Amazon S3<br/>Raw]
+
+    B --> C[AWS Glue<br/>Job Raw / Ingestão]
+    C --> D[Amazon S3<br/>Bronze / Parquet]
+
+    D --> E[AWS Glue<br/>Job Bronze]
+    E --> F[Amazon S3<br/>Silver]
+
+    F --> G[AWS Glue<br/>Job Silver]
+    G --> H[Amazon S3<br/>Gold]
+
+    H --> I[Glue Crawlers]
+    I --> J[Glue Data Catalog]
+    J --> K[Amazon Athena]
+
+    L[Eventos simulados<br/>2026] --> M[Spark Structured Streaming]
+    M --> F
+    M --> H
+
+    H --> N[Análises Estatísticas]
+    H --> O[Dashboards]
+    H --> P[Machine Learning]
+```
+
+A arquitetura utiliza as mesmas tabelas Silver e Gold para os fluxos batch e streaming. Dessa forma, a ingestão em tempo quase real não cria um contrato de dados paralelo.
+
+---
+
+### Fluxo de Dados
+
+O fluxo batch representa o processamento principal da solução:
+
+1. os arquivos oficiais são capturados das fontes do INEP;
+2. os dados são armazenados no bucket Raw;
+3. a Bronze aplica schemas explícitos, seleciona as colunas contratadas e converte os dados para Parquet;
+4. a Silver normaliza chaves, tipos e regras semânticas;
+5. contratos executáveis de qualidade validam os datasets;
+6. a Gold integra resultados, metas e contexto educacional;
+7. os Glue Crawlers atualizam o catálogo técnico;
+8. os dados ficam disponíveis para consulta SQL no Athena.
+
+Os jobs são executados sequencialmente. O orquestrador aguarda a conclusão de cada etapa antes de iniciar a seguinte e interrompe a pipeline quando um job termina em estado de falha.
+
+No fluxo de streaming, um produtor gera eventos simulados de novas medições de desempenho para 2026. Os eventos são gravados periodicamente no S3 e consumidos pelo Spark Structured Streaming em micro-lotes.
+
+Cada micro-lote é transformado para o mesmo schema utilizado pelo processamento batch, deduplicado e integrado às tabelas Silver e Gold.
+
+---
+
+Abaixo é apresentada a organização de pastas e scripts adotada para o desenvolvimento do projeto:
+
+```text
+.
+├── README.md                 # Documentação principal
+├── environment.yml           # Dependências do ambiente Conda
+├── requirements.txt          # Dependências pip
+├── config_vars.sh            # Variáveis globais de ambiente (AWS/Config)
+├── data_lake/                # Mock local da estrutura de diretórios do S3 (Raw, Bronze, Silver, Gold, Streaming)
+├── docs/                     # Documentação complementar (Governança, Custos, Qualidade)
+├── notebooks/                # Notebooks Jupyter de desenvolvimento e análise exploratória do ambiente PySpark
+├── references/               # Scripts e materiais didáticos das aulas (ficheiros de referência)
+└── src/                      # Código fonte do projeto
+    ├── aws/                  # Infraestrutura Bash e jobs PySpark para o AWS Glue (Raw -> Bronze -> Silver -> Gold -> Streaming)
+    │   ├── create_aws_resources.sh
+    │   ├── delete_aws_resources.sh
+    │   ├── glue_etl_bronze.py
+    │   ├── glue_etl_gold.py
+    │   ├── glue_etl_raw.py
+    │   ├── glue_etl_silver.py
+    │   ├── glue_etl_streaming.py
+    │   └── recreate_aws_resources.sh
+    ├── data/                 # Scripts para geração e aquisição manual de datasets locais
+    ├── features/             # Lógicas de Feature engineering para Machine Learning
+    ├── models/               # Scripts para prototipagem e treino do pipeline de Machine Learning
+    └── visualization/        # Códigos e funções para geração de relatórios tabulares e gráficos
+```
 
 ## Pré-requisitos
 
@@ -246,137 +275,44 @@ python test_spark.py     # SparkSession sobe localmente
 > Ao rodar os **notebooks** no VS Code / Jupyter, lembre-se de selecionar o kernel do
 > ambiente **`postech2`**.
 
-### 5. Configurar as credenciais AWS (.env)
-
-As credenciais do **AWS Academy Learner Lab são temporárias** e expiram ao encerrar a
-sessão do lab, por isso incluem um **session token** e precisam ser atualizadas a cada
-nova sessão.
-
-Copie o modelo e preencha os valores:
-
-```bash
-cp .env.example .env
-```
-
-Conteúdo esperado do `.env` (obtido em **Learner Lab → AWS Details → AWS CLI**):
-
-```dotenv
-# Credenciais temporárias do AWS Academy Learner Lab
-AWS_ACCESS_KEY_ID=<sua_access_key>
-AWS_SECRET_ACCESS_KEY=<sua_secret_key>
-AWS_SESSION_TOKEN=<seu_session_token>
-AWS_DEFAULT_REGION=us-east-1
-
-# Bucket S3 que atua como Data Lake
-S3_BUCKET=<seu_bucket_unico>
-```
-
-> O arquivo `.env` **não deve ser versionado** (já deve constar no `.gitignore`).
-> Cada integrante usa suas próprias credenciais e seu próprio bucket.
-
-Além disso, configure o arquivo `~/.aws/credentials` para facilitar o uso do AWS CLI.
-
-### 6. Criar o bucket S3 (Data Lake)
-
-Para a execução dos notebooks é necessário configurar um bucket.
-
-O nome do bucket é **globalmente único**. Sugestão de padrão:
-`alfabetizacao-data-lake-<seu-nome>`
-
-**Learner Lab:**
-S3 → *Create bucket* → região **us-east-1** → nome único → *Create*.
-
-Depois de criado, garanta que o nome está preenchido em `S3_BUCKET` no `.env`.
-
-### 7. Baixar os dados oficiais do INEP
-
-Os microdados são grandes e **não são versionados**. Cada clone precisa baixá-los.
-Execute o notebook de aquisição, que faz o download dos arquivos de
-`download.inep.gov.br` e os extrai em `data_lake/external/`:
-
-```
-notebooks/00_aquisicao_dados.ipynb
-```
-
-Ao final você deve ter, em `data_lake/external/extraidos/{2023,2024,2025}/`, os arquivos
-`TS_ALUNO.csv`, `TS_ESTADO.csv`, `TS_MUNICIPIO.csv` e os `.xlsx` de metas.
-
-> Caso o download automático falhe, os arquivos podem ser baixados manualmente no portal
-> do INEP e colocados em `data_lake/external/`. Atenção ao nome do pacote de 2025
-> (`microdados_AEEB_2025.zip`), que **não segue** o padrão dos anos anteriores.
-
-### 8. Testar a conexão com o S3
-
-Com `.env` preenchido e bucket criado, valide o acesso ao S3 antes do pipeline:
-
-```bash
-python test_conexao.py
-```
-
-ou execute o notebook `notebooks/02_teste_conexao.ipynb`.
-
-### 9. Executar o pipeline (medalhão)
-
-Com o ambiente, as credenciais e os dados no lugar.
-(leitura dos arquivos do INEP e escrita em Parquet no S3 via PySpark/S3A):
-
-```
-notebooks/02_Pipeline.ipynb
-```
-
-Ao concluir, os dados brutos estarão materializados no S3, em
-`s3://<S3_BUCKET>/bronze/...`.
-
----
-
-### 10. Ambiente AWS
-
+### 5. Ambiente AWS
 
 Toda a configuração e execução no ambiente AWS é realizada de forma automatizada
 a partir de shell scripts.
 
-#### 10.1 - Configuração AWS CLI
+#### 5.1 - Configuração AWS CLI
 
-Altere o arquivo `~/.aws/credentials` de acordo para que o aws cli seja 
+Altere o arquivo `~/.aws/credentials` de acordo para que o aws cli seja
 utilizado adequamente ao executar os scripts abaixo.
 
-#### 10.2 - Configuração das variáveis
+#### 5.2 - Configuração das variáveis
 
 Altere as variáveis definidas no arquivo config_vars.sh.
 
-#### 10.3 - Configuração do ambiente e execução
+#### 5.3 - Configuração do ambiente e execução
 
 Execute o script `create_aws_resources.sh` da seguinte forma:
+
 ```bash
 bash src/aws/create_aws_resources.sh
 ```
 
 O programa fará questionamentos ao longo da execução, para evitar esse comportamento,
 defina a variável AUTO_CONFIRM:
+
 ```bash
 AUTOCONFIRM=1 bash src/aws/create_aws_resources.sh
 ```
 
-#### 10.4 - Deleção dos recursos
+#### 5.4 - Deleção dos recursos
 
 > Cuidado: Essa ação não pode ser desfeita!
 
 Ao final da execução delete os recursos gerados com o seguinte comando:
+
 ```bash
 bash src/aws/delete_aws_resources.sh
 ```
-
-
-## Estado atual e próximos passos
-
-**Funcionando hoje (fim a fim até a Bronze):**
-
-- Aquisição dos arquivos oficiais do INEP (2023–2025).
-- Exploração das entidades (`TS_MUNICIPIO`, `TS_ALUNO`, `TS_ESTADO`) e dos XLSX de metas.
-- Conexão com o S3 validada (credenciais temporárias do Learner Lab).
-- Ingestão na camada **Bronze** (PySpark → Parquet no S3).
-
-
 
 **Em construção:**
 
@@ -389,19 +325,9 @@ bash src/aws/delete_aws_resources.sh
 
 ## Observações importantes / Troubleshooting
 
-- **Credenciais temporárias (Learner Lab):** ao configurar o acesso S3 no Spark, use
-  `org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider`. O
-  `SimpleAWSCredentialsProvider` **ignora o session token** e causa erro `403`.
-  As credenciais expiram ao fim da sessão do lab — atualize o `.env` a cada sessão.
-- **JARs do S3A:** os conectores são provisionados via `spark.jars.packages`, com as
-  coordenadas Maven `org.apache.hadoop:hadoop-aws:3.3.4` e
-  `com.amazonaws:aws-java-sdk-bundle:1.12.262` (pareamento testado para o Hadoop 3.3.4).
-- **Python do driver/worker:** defina
-  `os.environ["PYSPARK_PYTHON"]` e `os.environ["PYSPARK_DRIVER_PYTHON"]` como
-  `sys.executable` **antes** de criar a `SparkSession`, para evitar divergência entre
-  interpretadores.
-- **Leitura dos arquivos do INEP:** encoding **ISO-8859-1**, separador **`;`**. Nos XLSX,
-  espere linhas de título e células mescladas — inspecione o bruto antes de ler.
+* **Credenciais temporárias (AWS Learner Lab):** Ao configurar os drivers PySpark a apontar para o AWS S3 localmente, use a biblioteca `org.apache.hadoop.fs.s3a.TemporaryAWSCredentialsProvider`. O provedor *default* `SimpleAWSCredentialsProvider` **ignora o session token** exigido nestes ambientes e causará indisponibilidade retornando Erro HTTP `403`. As credenciais de ambientes de laboratório expiram periodicamente — atualize o seu ficheiro local de ambiente antes das sessões de  *debug* !
+* **JARs do S3A:** Os conectores cruciais em cloud nativa do Spark requerem a flag explícita de `spark.jars.packages` com coordenadas do Maven emparelhadas. Foi devidamente testado utilizar `org.apache.hadoop:hadoop-aws:3.3.4` e a respetiva `com.amazonaws:aws-java-sdk-bundle:1.12.262` (sob ambiente Hadoop 3.3.4).
+* **Python Driver/Worker Sync:** Defina programaticamente as suas referências como `os.environ["PYSPARK_PYTHON"] = sys.executable` e o referencial respetivo `os.environ["PYSPARK_DRIVER_PYTHON"]` a apontar para o seu executável global do interpretador. Isto deve ser injetado no processo estritamente **antes** de criar a estrutura `SparkSession` no IDE local, assegurando que o *node* primário não crie conflito de execução sobre o  *driver* .
 
 ---
 
